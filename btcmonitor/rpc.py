@@ -30,6 +30,8 @@ class BitcoinRPC:
         self.config = config
         self._url = f"http://{config.host}:{config.port}"
         self._auth_header = self._build_auth_header()
+        self._auth_source: str = "basic" if (config.user and config.password) else "cookie"
+        self._cookie_path: Optional[Path] = discover_cookie_path(self.config.network)
 
     def _build_auth_header(self) -> Dict[str, str]:
         if self.config.user and self.config.password:
@@ -50,8 +52,23 @@ class BitcoinRPC:
             resp = requests.post(self._url, headers={"Content-Type": "application/json", **self._auth_header}, data=json.dumps(payload), timeout=self.config.timeout)
         except requests.RequestException as e:
             raise RPCError(str(e))
+        # If unauthorized with basic, retry once with cookie (if present)
+        if resp.status_code == 401 and self._auth_source == "basic":
+            cookie_path = self._cookie_path or discover_cookie_path(self.config.network)
+            if cookie_path and cookie_path.exists():
+                content = Path(cookie_path).read_text().strip()
+                token = base64.b64encode(content.encode()).decode()
+                retry_header = {"Content-Type": "application/json", "Authorization": f"Basic {token}"}
+                try:
+                    resp = requests.post(self._url, headers=retry_header, data=json.dumps(payload), timeout=self.config.timeout)
+                    self._auth_header = {"Authorization": f"Basic {token}"}
+                    self._auth_source = "cookie"
+                except requests.RequestException as e:
+                    raise RPCError(str(e))
         if resp.status_code == 401:
-            raise RPCError("Unauthorized: check RPC credentials or cookie")
+            target = f"http://{self.config.host}:{self.config.port}"
+            cookie_note = f" cookie at {self._cookie_path}" if (self._cookie_path and self._cookie_path.exists()) else " cookie (not found)"
+            raise RPCError(f"Unauthorized to {target}: check rpcuser/rpcpassword or rpcauth, or{cookie_note} for this network ({self.config.network}).")
         if resp.status_code >= 400:
             raise RPCError(f"HTTP {resp.status_code}: {resp.text}")
         data = resp.json()
