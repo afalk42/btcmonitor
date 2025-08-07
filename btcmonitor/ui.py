@@ -199,7 +199,7 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
         Layout(name="projection"),
     )
 
-    with Live(layout, console=console, auto_refresh=False, screen=True):
+    with Live(layout, console=console, auto_refresh=False, screen=True) as live:
         while True:
             snap, mem_view, proj, err = gather_snapshot(rpc)
             layout["sys"].update(get_system_panel())
@@ -207,5 +207,5 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
             layout["mempool"].update(get_mempool_panel(mem_view))
             layout["projection"].update(get_projection_panel(proj))
             console.set_window_title("btcmonitor")
-            console.refresh()
+            live.refresh()
             time.sleep(max(0.1, 1.0 / refresh_hz))
