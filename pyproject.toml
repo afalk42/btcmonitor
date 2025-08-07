@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "btcmonitor"
+version = "0.1.0"
+description = "Terminal TUI to monitor a local Bitcoin Core node via JSON-RPC"
+readme = "README.md"
+authors = [{name = "btcmonitor"}]
+license = {file = "LICENSE"}
+requires-python = ">=3.9"
+dependencies = [
+  "requests>=2.32",
+  "rich>=13.7",
+  "psutil>=5.9",
+]
+
+[project.scripts]
+btcmonitor = "btcmonitor.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["btcmonitor*"]
+
+[tool.setuptools]
+zip-safe = false
