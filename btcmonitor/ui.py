@@ -12,7 +12,7 @@ from rich.table import Table
 from rich.layout import Layout
 from rich.progress import BarColumn, Progress, TextColumn
 from rich.text import Text
-from rich.box import SIMPLE
+from rich.box import ROUNDED
 
 from .rpc import BitcoinRPC, RPCError
 
@@ -59,7 +59,7 @@ def get_system_panel() -> Panel:
     text.append(f"CPU: {cpu:5.1f}%\n")
     text.append(f"RAM: {mem.percent:5.1f}% of {format_bytes(mem.total)}\n")
     text.append(f"SWP: {swap.percent:5.1f}% of {format_bytes(swap.total)}\n")
-    return Panel(text, title="System", box=SIMPLE)
+    return Panel(text, title="System", box=ROUNDED)
 
 
 def get_node_panel(snap: Optional[NodeSnapshot], err: Optional[str]) -> Panel:
@@ -67,9 +67,9 @@ def get_node_panel(snap: Optional[NodeSnapshot], err: Optional[str]) -> Panel:
     table.add_column(justify="right", style="bold cyan")
     table.add_column()
     if err:
-        return Panel(Text(err, style="bold red"), title="Bitcoin Core", box=SIMPLE)
+        return Panel(Text(err, style="bold red"), title="Bitcoin Core", box=ROUNDED)
     if not snap:
-        return Panel(Text("Connecting..."), title="Bitcoin Core", box=SIMPLE)
+        return Panel(Text("Connecting..."), title="Bitcoin Core", box=ROUNDED)
     table.add_row("Chain", snap.chain)
     table.add_row("Height", str(snap.height))
     table.add_row("Headers", str(snap.headers))
@@ -77,7 +77,7 @@ def get_node_panel(snap: Optional[NodeSnapshot], err: Optional[str]) -> Panel:
     table.add_row("Peers", str(snap.peers))
     table.add_row("Mempool", f"{snap.mempool_tx} txs / {format_bytes(snap.mempool_bytes)}")
     table.add_row("Difficulty", f"{snap.difficulty:.4g}")
-    return Panel(table, title="Bitcoin Core", box=SIMPLE)
+    return Panel(table, title="Bitcoin Core", box=ROUNDED)
 
 
 def build_fee_buckets(mempool: Dict[str, Dict]) -> List[Tuple[str, int]]:
@@ -114,20 +114,20 @@ def ascii_histogram(buckets: List[Tuple[str, int]], max_width: int = 40) -> Text
 
 def get_mempool_panel(view: Optional[MempoolView]) -> Panel:
     if not view:
-        return Panel(Text("…"), title="Mempool", box=SIMPLE)
+        return Panel(Text("…"), title="Mempool", box=ROUNDED)
     text = Text()
     text.append(f"Total: {view.total_tx} txs / {format_bytes(view.total_vbytes)}\n\n")
     text.append(ascii_histogram(view.fee_buckets))
-    return Panel(text, title="Mempool", box=SIMPLE)
+    return Panel(text, title="Mempool", box=ROUNDED)
 
 
 def get_projection_panel(proj: Optional[BlockProjection]) -> Panel:
     if not proj:
-        return Panel(Text("…"), title="Next Block (est)", box=SIMPLE)
+        return Panel(Text("…"), title="Next Block (est)", box=ROUNDED)
     text = Text()
     text.append(f"Tx: ~{proj.est_tx}, Weight(vB): ~{proj.est_weight_vbytes}\n\n")
     text.append(ascii_histogram(proj.fee_buckets))
-    return Panel(text, title="Next Block (est)", box=SIMPLE)
+    return Panel(text, title="Next Block (est)", box=ROUNDED)
 
 
 def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[MempoolView], Optional[BlockProjection], Optional[str]]:
@@ -199,7 +199,7 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
         Layout(name="projection"),
     )
 
-    with Live(layout, console=console, auto_refresh=False, screen=True) as live:
+    with Live(console=console, auto_refresh=False, screen=True, transient=False) as live:
         while True:
             snap, mem_view, proj, err = gather_snapshot(rpc)
             layout["sys"].update(get_system_panel())
@@ -207,5 +207,5 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
             layout["mempool"].update(get_mempool_panel(mem_view))
             layout["projection"].update(get_projection_panel(proj))
             console.set_window_title("btcmonitor")
-            live.refresh()
+            live.update(layout, refresh=True)
             time.sleep(max(0.1, 1.0 / refresh_hz))
