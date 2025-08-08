@@ -126,20 +126,40 @@ def get_fee_color(fee_rate: float) -> str:
     else:
         return "blue"
 
-def render_block_grid(transactions: List[Transaction], width: int = 50, height: int = 20) -> Text:
-    """Render block as a visual grid like mempool.space"""
+def render_block_grid(transactions: List[Transaction], console: Console, panel_width: int = None, panel_height: int = None) -> Text:
+    """Render block as a visual grid like mempool.space with dynamic sizing"""
     text = Text()
     
     if not transactions:
         text.append("No transactions", style="dim")
         return text
     
+    # Calculate available dimensions
+    if panel_width is None or panel_height is None:
+        # Get terminal size and estimate panel size
+        term_width = console.size.width
+        term_height = console.size.height
+        # Projection panel is roughly 1/2 width, and takes up roughly 2/3 of the bottom half
+        # Account for borders, title, legend, etc.
+        width = max(20, min(80, (term_width // 2) - 6))  # Leave space for borders
+        height = max(6, min(40, (2 * term_height // 3) - 8))  # Leave space for text + legend
+    else:
+        width = max(20, min(80, panel_width - 6))
+        height = max(6, min(40, panel_height - 8))
+    
     # Sort transactions by fee rate (highest first)
     sorted_txs = sorted(transactions, key=lambda t: t.fee_rate, reverse=True)
     
-    # Calculate grid dimensions
+    # Calculate grid dimensions - distribute transactions across cells
     total_cells = width * height
-    tx_per_cell = max(1, len(sorted_txs) // total_cells)
+    if len(sorted_txs) > total_cells:
+        # More transactions than cells - multiple transactions per cell
+        tx_per_cell = len(sorted_txs) // total_cells
+        remainder = len(sorted_txs) % total_cells
+    else:
+        # Fewer transactions than cells - one transaction per cell
+        tx_per_cell = 1
+        remainder = 0
     
     cell_idx = 0
     for row in range(height):
@@ -148,8 +168,13 @@ def render_block_grid(transactions: List[Transaction], width: int = 50, height: 
                 tx = sorted_txs[cell_idx]
                 color = get_fee_color(tx.fee_rate)
                 text.append("█", style=color)
-                cell_idx += tx_per_cell
+                # Skip ahead based on transactions per cell
+                skip = tx_per_cell
+                if remainder > 0 and (row * width + col) < remainder:
+                    skip += 1  # Distribute remainder across first cells
+                cell_idx += skip
             else:
+                # Empty space in block
                 text.append("░", style="dim")
         text.append("\n")
     
@@ -174,7 +199,7 @@ def get_mempool_panel(view: Optional[MempoolView]) -> Panel:
     return Panel(text, title="Mempool", box=ROUNDED)
 
 
-def get_projection_panel(proj: Optional[BlockProjection]) -> Panel:
+def get_projection_panel(proj: Optional[BlockProjection], console: Console) -> Panel:
     if not proj:
         return Panel(Text("…"), title="Next Block Template", box=ROUNDED)
     
@@ -189,8 +214,8 @@ def get_projection_panel(proj: Optional[BlockProjection]) -> Panel:
         avg_fee = sum(fee_rates) / len(fee_rates)
         text.append(f"Fee: {min_fee:.1f}-{max_fee:.1f} (avg: {avg_fee:.1f}) sat/vB\n\n")
         
-        # Render the visual block grid
-        text.append(render_block_grid(proj.transactions, width=40, height=10))
+        # Render the visual block grid with dynamic sizing
+        text.append(render_block_grid(proj.transactions, console))
         
         # Add fee rate legend
         text.append("\nFee Legend: ")
@@ -331,7 +356,7 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
             layout["sys"].update(get_system_panel())
             layout["node"].update(get_node_panel(snap, err))
             layout["mempool"].update(get_mempool_panel(mem_view))
-            layout["projection"].update(get_projection_panel(proj))
+            layout["projection"].update(get_projection_panel(proj, console))
             console.set_window_title("btcmonitor")
             live.update(layout, refresh=True)
             time.sleep(max(0.1, 1.0 / refresh_hz))
