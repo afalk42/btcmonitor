@@ -36,10 +36,17 @@ class MempoolView:
     fee_buckets: List[Tuple[str, int]]  # label, vbytes
 
 
+@dataclass  
+class Transaction:
+    fee_rate: float  # sat/vB
+    vbytes: int
+    txid: str
+
 @dataclass
 class BlockProjection:
     est_tx: int
     est_weight_vbytes: int
+    transactions: List[Transaction]
     fee_buckets: List[Tuple[str, int]]  # label, vbytes
 
 
@@ -102,6 +109,52 @@ def build_fee_buckets(mempool: Dict[str, Dict]) -> List[Tuple[str, int]]:
     return labels
 
 
+def get_fee_color(fee_rate: float) -> str:
+    """Get color for fee rate visualization"""
+    if fee_rate >= 100:
+        return "bright_red"
+    elif fee_rate >= 50:
+        return "red"
+    elif fee_rate >= 20:
+        return "bright_yellow"
+    elif fee_rate >= 10:
+        return "yellow"
+    elif fee_rate >= 5:
+        return "bright_green"
+    elif fee_rate >= 2:
+        return "green"
+    else:
+        return "blue"
+
+def render_block_grid(transactions: List[Transaction], width: int = 50, height: int = 20) -> Text:
+    """Render block as a visual grid like mempool.space"""
+    text = Text()
+    
+    if not transactions:
+        text.append("No transactions", style="dim")
+        return text
+    
+    # Sort transactions by fee rate (highest first)
+    sorted_txs = sorted(transactions, key=lambda t: t.fee_rate, reverse=True)
+    
+    # Calculate grid dimensions
+    total_cells = width * height
+    tx_per_cell = max(1, len(sorted_txs) // total_cells)
+    
+    cell_idx = 0
+    for row in range(height):
+        for col in range(width):
+            if cell_idx < len(sorted_txs):
+                tx = sorted_txs[cell_idx]
+                color = get_fee_color(tx.fee_rate)
+                text.append("█", style=color)
+                cell_idx += tx_per_cell
+            else:
+                text.append("░", style="dim")
+        text.append("\n")
+    
+    return text
+
 def ascii_histogram(buckets: List[Tuple[str, int]], max_width: int = 40) -> Text:
     text = Text()
     max_vb = max((vb for _, vb in buckets), default=1)
@@ -123,11 +176,42 @@ def get_mempool_panel(view: Optional[MempoolView]) -> Panel:
 
 def get_projection_panel(proj: Optional[BlockProjection]) -> Panel:
     if not proj:
-        return Panel(Text("…"), title="Next Block (est)", box=ROUNDED)
+        return Panel(Text("…"), title="Next Block Template", box=ROUNDED)
+    
     text = Text()
-    text.append(f"Tx: ~{proj.est_tx}, Weight(vB): ~{proj.est_weight_vbytes}\n\n")
-    text.append(ascii_histogram(proj.fee_buckets))
-    return Panel(text, title="Next Block (est)", box=ROUNDED)
+    text.append(f"Transactions: {proj.est_tx:,} | Size: {format_bytes(proj.est_weight_vbytes)}\n")
+    
+    if proj.transactions:
+        # Show fee rate statistics
+        fee_rates = [tx.fee_rate for tx in proj.transactions]
+        min_fee = min(fee_rates)
+        max_fee = max(fee_rates)
+        avg_fee = sum(fee_rates) / len(fee_rates)
+        text.append(f"Fee: {min_fee:.1f}-{max_fee:.1f} (avg: {avg_fee:.1f}) sat/vB\n\n")
+        
+        # Render the visual block grid
+        text.append(render_block_grid(proj.transactions, width=40, height=10))
+        
+        # Add fee rate legend
+        text.append("\nFee Legend: ")
+        text.append("█", style="bright_red")
+        text.append("100+ ")
+        text.append("█", style="red") 
+        text.append("50+ ")
+        text.append("█", style="bright_yellow")
+        text.append("20+ ")
+        text.append("█", style="yellow")
+        text.append("10+ ")
+        text.append("█", style="bright_green")
+        text.append("5+ ")
+        text.append("█", style="green")
+        text.append("2+ ")
+        text.append("█", style="blue")
+        text.append("<2 sat/vB")
+    else:
+        text.append("\nNo transaction data available")
+        
+    return Panel(text, title="Next Block Template", box=ROUNDED)
 
 
 def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[MempoolView], Optional[BlockProjection], Optional[str]]:
@@ -152,32 +236,74 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
             total_vbytes=sum(tx.get("vsize", tx.get("weight", 0) // 4) for tx in mem_verbose.values()),
             fee_buckets=fee_buckets,
         )
-        # Projection: try getblocktemplate; fallback to fill with top fee buckets totaling ~ 1e6 vB
+        # Projection: try getblocktemplate; fallback to mempool estimation
         proj: Optional[BlockProjection] = None
         try:
             gbt = rpc.get_block_template()
-            # Estimate from transactions in template
             txs = gbt.get("transactions", [])
-            total_vb = sum(tx.get("weight", 0) // 4 for tx in txs)
-            est_tx = len(txs)
-            # Build fee buckets from gbt if fee info present (not always); else reuse mempool buckets filtered
-            proj_buckets = build_fee_buckets({t.get("txid", f"{i}"): {"vsize": t.get("weight", 0)//4, "fees": {"base": (t.get("fee", 0)/1e8)}} for i, t in enumerate(txs)})
-            proj = BlockProjection(est_tx=est_tx, est_weight_vbytes=total_vb, fee_buckets=proj_buckets)
+            
+            # Create Transaction objects from block template
+            transactions = []
+            for i, tx in enumerate(txs):
+                vbytes = tx.get("weight", 0) // 4
+                fee_btc = tx.get("fee", 0) / 1e8
+                fee_rate = (fee_btc * 1e8) / max(1, vbytes)  # sat/vB
+                
+                transactions.append(Transaction(
+                    fee_rate=fee_rate,
+                    vbytes=vbytes,
+                    txid=tx.get("txid", f"tx_{i}")
+                ))
+            
+            total_vb = sum(tx.vbytes for tx in transactions)
+            proj_buckets = build_fee_buckets({t.txid: {"vsize": t.vbytes, "fees": {"base": t.fee_rate/1e8}} for t in transactions})
+            proj = BlockProjection(
+                est_tx=len(transactions), 
+                est_weight_vbytes=total_vb, 
+                transactions=transactions,
+                fee_buckets=proj_buckets
+            )
+            
         except RPCError:
-            # fallback: greedy include from highest fee bands
+            # Fallback: estimate from mempool using greedy algorithm
             sorted_buckets = sorted(fee_buckets, key=lambda x: int(x[0].split()[0].replace(">=", "").split("-")[0]), reverse=True)
             capacity = 1_000_000  # ~1M vbytes
             acc_vb = 0
             proj_buckets: List[Tuple[str, int]] = []
+            transactions = []
+            
+            # Create synthetic transactions from fee buckets
+            tx_id = 0
             for label, vb in sorted_buckets:
                 if acc_vb >= capacity:
                     break
                 take = min(vb, capacity - acc_vb)
                 if take > 0:
                     proj_buckets.append((label, take))
-                    acc_vb += take
-            est_tx = int(view.total_tx * (acc_vb / max(1, view.total_vbytes))) if view.total_vbytes else 0
-            proj = BlockProjection(est_tx=est_tx, est_weight_vbytes=acc_vb, fee_buckets=proj_buckets)
+                    # Parse fee rate from label 
+                    fee_rate = int(label.split()[0].replace(">=", "").split("-")[0])
+                    # Create synthetic transactions (group by ~250 vbytes each)
+                    tx_size = 250
+                    num_txs = max(1, take // tx_size)
+                    for _ in range(num_txs):
+                        transactions.append(Transaction(
+                            fee_rate=fee_rate,
+                            vbytes=min(tx_size, take),
+                            txid=f"synthetic_{tx_id}"
+                        ))
+                        tx_id += 1
+                        take -= tx_size
+                        if take <= 0:
+                            break
+                    acc_vb += min(vb, capacity - acc_vb)
+            
+            est_tx = len(transactions)
+            proj = BlockProjection(
+                est_tx=est_tx, 
+                est_weight_vbytes=acc_vb, 
+                transactions=transactions,
+                fee_buckets=proj_buckets
+            )
         return snap, view, proj, None
     except RPCError as e:
         return None, None, None, str(e)
