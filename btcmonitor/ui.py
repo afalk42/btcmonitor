@@ -3,6 +3,9 @@ import time
 import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
+from datetime import datetime, timedelta
+import urllib.request
+import json
 
 import psutil
 from rich.console import Console
@@ -49,6 +52,13 @@ class BlockProjection:
     transactions: List[Transaction]
     fee_buckets: List[Tuple[str, int]]  # label, vbytes
 
+@dataclass
+class BitcoinInfo:
+    price_usd: Optional[float]
+    current_subsidy: float
+    blocks_until_halving: int
+    estimated_halving_date: Optional[str]
+
 
 def format_bytes(num: int) -> str:
     for unit in ["B", "KB", "MB", "GB"]:
@@ -57,6 +67,75 @@ def format_bytes(num: int) -> str:
         num /= 1024
     return f"{num:.1f} TB"
 
+def get_current_subsidy(block_height: int) -> float:
+    """Calculate current block subsidy based on block height"""
+    subsidy = 50.0  # Initial subsidy
+    halvings = block_height // 210_000
+    return subsidy / (2 ** halvings)
+
+def calculate_halving_info(block_height: int) -> Tuple[int, Optional[str]]:
+    """Calculate blocks until next halving and estimated date"""
+    HALVING_INTERVAL = 210_000
+    BLOCK_TIME_MINUTES = 10  # Average block time
+    
+    next_halving_block = ((block_height // HALVING_INTERVAL) + 1) * HALVING_INTERVAL
+    blocks_until_halving = next_halving_block - block_height
+    
+    # Estimate date (approximate)
+    minutes_until_halving = blocks_until_halving * BLOCK_TIME_MINUTES
+    estimated_date = datetime.now() + timedelta(minutes=minutes_until_halving)
+    date_str = estimated_date.strftime("%Y-%m-%d")
+    
+    return blocks_until_halving, date_str
+
+# Global price cache
+_price_cache: Dict[str, float] = {}
+_last_price_fetch = 0.0
+PRICE_CACHE_DURATION = 60.0  # 60 seconds
+
+def fetch_bitcoin_price() -> Optional[float]:
+    """Fetch Bitcoin price from a public API with caching"""
+    global _price_cache, _last_price_fetch
+    
+    current_time = time.time()
+    
+    # Check if we have a cached price that's less than 60 seconds old
+    if (current_time - _last_price_fetch) < PRICE_CACHE_DURATION and "btc_usd" in _price_cache:
+        return _price_cache["btc_usd"]
+    
+    try:
+        # Using CoinGecko API (no auth required)
+        url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
+        with urllib.request.urlopen(url, timeout=3) as response:
+            data = json.loads(response.read())
+            price = float(data["bitcoin"]["usd"])
+            
+            # Update cache
+            _price_cache["btc_usd"] = price
+            _last_price_fetch = current_time
+            
+            return price
+    except Exception:
+        # If API fails, return cached price if available
+        return _price_cache.get("btc_usd", None)
+
+
+def get_bitcoin_info_panel(info: Optional[BitcoinInfo]) -> Panel:
+    table = Table.grid(padding=(0, 1))
+    table.add_column(justify="right", style="bold orange1")
+    table.add_column()
+    
+    if not info:
+        return Panel(Text("Loading...", style="dim"), title="Bitcoin", box=ROUNDED)
+    
+    price_str = f"${info.price_usd:,.0f}" if info.price_usd else "N/A"
+    table.add_row("Price", price_str)
+    table.add_row("Block Subsidy", f"{info.current_subsidy:.3f} BTC")
+    table.add_row("To Next Halving", f"{info.blocks_until_halving:,} blocks")
+    halving_date = info.estimated_halving_date or "Unknown"
+    table.add_row("Est. Halving Date", halving_date)
+    
+    return Panel(table, title="Bitcoin", box=ROUNDED)
 
 def get_system_panel() -> Panel:
     cpu = psutil.cpu_percent(interval=None)
@@ -239,7 +318,7 @@ def get_projection_panel(proj: Optional[BlockProjection], console: Console) -> P
     return Panel(text, title="Next Block Template", box=ROUNDED)
 
 
-def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[MempoolView], Optional[BlockProjection], Optional[str]]:
+def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[MempoolView], Optional[BlockProjection], Optional[BitcoinInfo], Optional[str]]:
     try:
         bi = rpc.get_blockchain_info()
         mi = rpc.get_mempool_info()
@@ -329,9 +408,25 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
                 transactions=transactions,
                 fee_buckets=proj_buckets
             )
-        return snap, view, proj, None
+        
+        # Bitcoin info (price, subsidy, halving)
+        block_height = int(bi.get("blocks", 0))
+        current_subsidy = get_current_subsidy(block_height)
+        blocks_until_halving, halving_date = calculate_halving_info(block_height)
+        
+        # Fetch Bitcoin price (async, might fail)
+        bitcoin_price = fetch_bitcoin_price()
+        
+        bitcoin_info = BitcoinInfo(
+            price_usd=bitcoin_price,
+            current_subsidy=current_subsidy,
+            blocks_until_halving=blocks_until_halving,
+            estimated_halving_date=halving_date
+        )
+        
+        return snap, view, proj, bitcoin_info, None
     except RPCError as e:
-        return None, None, None, str(e)
+        return None, None, None, None, str(e)
 
 
 def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
@@ -343,6 +438,7 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
     )
     layout["top"].split_row(
         Layout(name="sys"),
+        Layout(name="bitcoin_info"),
         Layout(name="node"),
     )
     layout["bottom"].split_row(
@@ -352,8 +448,9 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
 
     with Live(console=console, auto_refresh=False, screen=True, transient=False) as live:
         while True:
-            snap, mem_view, proj, err = gather_snapshot(rpc)
+            snap, mem_view, proj, bitcoin_info, err = gather_snapshot(rpc)
             layout["sys"].update(get_system_panel())
+            layout["bitcoin_info"].update(get_bitcoin_info_panel(bitcoin_info))
             layout["node"].update(get_node_panel(snap, err))
             layout["mempool"].update(get_mempool_panel(mem_view))
             layout["projection"].update(get_projection_panel(proj, console))
