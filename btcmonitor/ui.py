@@ -133,7 +133,7 @@ def get_bitcoin_info_panel(info: Optional[BitcoinInfo]) -> Panel:
     table.add_row("Block Subsidy", f"{info.current_subsidy:.3f} BTC")
     table.add_row("To Next Halving", f"{info.blocks_until_halving:,} blocks")
     halving_date = info.estimated_halving_date or "Unknown"
-    table.add_row("Est. Halving Date", halving_date)
+    table.add_row("Est. Date", halving_date)
     
     return Panel(table, title="Bitcoin", box=ROUNDED)
 
