@@ -360,7 +360,7 @@ def get_mempool_panel(view: Optional[MempoolView]) -> Panel:
     text.append(ascii_histogram(view.fee_buckets))
     return Panel(text, title="Mempool", box=ROUNDED)
 
-def get_top_transactions_panel(view: Optional[MempoolView], bitcoin_price: Optional[float]) -> Panel:
+def get_top_transactions_panel(view: Optional[MempoolView], bitcoin_price: Optional[float], terminal_width: Optional[int] = None) -> Panel:
     global _initial_cache_loading
     
     if not view:
@@ -372,13 +372,19 @@ def get_top_transactions_panel(view: Optional[MempoolView], bitcoin_price: Optio
         else:
             return Panel(Text(f"No transaction data available\n(Total mempool txs: {view.total_tx if view else 0})"), title="Largest Transactions", box=ROUNDED)
     
+    # Determine if we should show the Fee US$ column based on terminal width
+    # Hide Fee US$ column when total terminal width < 114 characters
+    show_fee_usd_column = terminal_width is None or terminal_width >= 114
+    
     # Create table with headers
     table = Table(show_header=True, header_style="bold cyan", box=None, pad_edge=False)
     table.add_column("TxID", style="yellow", width=12)
     table.add_column("BTC", style="orange1", justify="right", width=10)
     table.add_column("US$", style="bright_green", justify="right", width=15)
     table.add_column("sat/vB", style="orange1", justify="right", width=8)
-    table.add_column("Fee US$", style="bright_green", justify="right", width=10)
+    
+    if show_fee_usd_column:
+        table.add_column("Fee US$", style="bright_green", justify="right", width=10)
     
     # Show top 100 transactions (or fewer if available)
     for tx in view.top_transactions[:100]:
@@ -395,7 +401,10 @@ def get_top_transactions_panel(view: Optional[MempoolView], bitcoin_price: Optio
             
         fee_sat_vb = f"{tx.fee_rate:.1f}"
         
-        table.add_row(txid_short, amount_btc, amount_usd, fee_sat_vb, fee_usd)
+        if show_fee_usd_column:
+            table.add_row(txid_short, amount_btc, amount_usd, fee_sat_vb, fee_usd)
+        else:
+            table.add_row(txid_short, amount_btc, amount_usd, fee_sat_vb)
     
     return Panel(table, title="Largest Transactions", box=ROUNDED)
 
@@ -808,7 +817,9 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
             layout["bitcoin_info"].update(get_bitcoin_info_panel(bitcoin_info))
             layout["node"].update(get_node_panel(snap, err))
             layout["mempool"].update(get_mempool_panel(mem_view))
-            layout["top_transactions"].update(get_top_transactions_panel(mem_view, bitcoin_info.price_usd if bitcoin_info else None))
+            # Pass terminal width for dynamic column hiding
+            terminal_width = console.size.width
+            layout["top_transactions"].update(get_top_transactions_panel(mem_view, bitcoin_info.price_usd if bitcoin_info else None, terminal_width))
             layout["projection"].update(get_projection_panel(proj, console))
             console.set_window_title("btcmonitor")
             live.update(layout, refresh=True)
