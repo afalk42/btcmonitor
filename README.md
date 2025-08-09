@@ -9,7 +9,27 @@ A terminal dashboard (TUI) that monitors a local Bitcoin Core node using its JSO
 
 ## Install
 
+### Prerequisites
+
+The following are needed for a successful installation:
+
+- Python 3.9+
+- PIP Python Package Mangage
+- Python3 virtual environments
+
+If you don't have them available, you can used these commands on Linux to install them:
+
 ```bash
+sudo apt install python3 python3-pip python3-venv
+```
+
+### Installation
+
+```bash
+git clone https://github.com/afalk42/btcmonitor
+python3 -m venv ~/.venv/
+source ~/.venv/bin/activate
+cd btcmonitor
 pip install -e .
 ```
 
@@ -28,7 +48,7 @@ btcmonitor --network mainnet --rpc-host 127.0.0.1 --rpc-port 8332 --rpc-user use
 If `--rpc-user`/`--rpc-password` are omitted, cookie authentication will be attempted.
 
 ## Requirements
-- Python 3.9+
+- Python 3.9+ with pip and venv support
 - A running `bitcoind` with JSON-RPC enabled (default on loopback)
 
 ## Features
