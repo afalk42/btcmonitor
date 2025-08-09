@@ -3,9 +3,15 @@
 A terminal dashboard (TUI) that monitors a local Bitcoin Core node using its JSON-RPC interface.
 
 - Cross-platform: macOS and Ubuntu/Linux
-- Single-binary dependency: Python 3.9+
 - Uses cookie auth detection or `bitcoin.conf`
-- Visualizes node health, mempool size/fee histogram, and a probable next-block template as well as expected tx count, weight, and fee rate bands
+- Visualizes the following data about your bitcoin node in a dashboard:
+  - Node health, blockchain height, peer information
+  - Bitcoin price, block subsidy, # of blocks until next halving, time since last block
+  - Mempool transaction count, memory size and fee histogram
+  - Next block template as well as expected tx count, weight, and fee rate bands
+  - Scrollable list of the 100 largest transactions in the mempool sorted by BTC output
+
+![[screenshot.png]]
 
 ## Installation
 
@@ -56,6 +62,8 @@ If `--rpc-user`/`--rpc-password` are omitted, cookie authentication will be atte
 - System stats: CPU, memory, I/O
 - Mempool visualization: fee buckets with ASCII bars
 - Next block projection: approximate composition derived from `getblocktemplate` or mempool fees
+- Bitcoin price, block subsidy, # of blocks until next halving, time since last block
+- Scrollable list of the 100 largest transactions in the mempool sorted by BTC output
 
 ## Quit
 - Press `q` or `Ctrl+C`
