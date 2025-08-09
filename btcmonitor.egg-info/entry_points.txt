@@ -1,2 +1,0 @@
-[console_scripts]
-btcmonitor = btcmonitor.__main__:main
