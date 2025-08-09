@@ -5,19 +5,19 @@ A terminal dashboard (TUI) that monitors a local Bitcoin Core node using its JSO
 - Cross-platform: macOS and Ubuntu/Linux
 - Single-binary dependency: Python 3.9+
 - Uses cookie auth detection or `bitcoin.conf`
-- Visualizes node health, mempool size/fee histogram, and a probable next-block outline (tx count, weight, fee rate bands)
+- Visualizes node health, mempool size/fee histogram, and a probable next-block template as well as expected tx count, weight, and fee rate bands
 
-## Install
+## Installation
 
 ### Prerequisites
 
 The following are needed for a successful installation:
 
 - Python 3.9+
-- PIP Python Package Mangage
-- Python3 virtual environments
+- PIP Python Package Mangager
+- Python3 virtual environments support
 
-If you don't have them available, you can used these commands on Linux to install them:
+If you don't have them already available, you can used these commands on Linux to install the prerequisites:
 
 ```bash
 sudo apt install python3 python3-pip python3-venv
