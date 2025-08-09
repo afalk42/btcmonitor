@@ -285,7 +285,11 @@ def ascii_histogram(buckets: List[Tuple[str, int]], max_width: int = 40) -> Text
     text = Text()
     max_vb = max((vb for _, vb in buckets), default=1)
     for label, vb in buckets:
-        bar_len = 0 if max_vb == 0 else int((vb / max_vb) * max_width)
+        if vb == 0:
+            bar_len = 0
+        else:
+            # Calculate bar length, then ensure minimum of 1 for non-zero values
+            bar_len = 1 + int((vb / max_vb) * max_width)
         
         # Extract fee rate from label for coloring
         if label.startswith("<"):

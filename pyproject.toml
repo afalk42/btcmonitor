@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "btcmonitor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Terminal TUI to monitor a local Bitcoin Core node via JSON-RPC"
 readme = "README.md"
 authors = [{name = "btcmonitor"}]
