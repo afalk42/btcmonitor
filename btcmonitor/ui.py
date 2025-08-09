@@ -58,6 +58,7 @@ class BitcoinInfo:
     current_subsidy: float
     blocks_until_halving: int
     estimated_halving_date: Optional[str]
+    time_since_last_block: Optional[int]  # seconds since last block
 
 
 def format_bytes(num: int) -> str:
@@ -66,6 +67,12 @@ def format_bytes(num: int) -> str:
             return f"{num:.0f} {unit}"
         num /= 1024
     return f"{num:.1f} TB"
+
+def format_time_since_block(seconds: int) -> str:
+    """Format seconds into minutes:seconds format"""
+    minutes = seconds // 60
+    remaining_seconds = seconds % 60
+    return f"{minutes}:{remaining_seconds:02d}"
 
 def get_current_subsidy(block_height: int) -> float:
     """Calculate current block subsidy based on block height"""
@@ -134,6 +141,9 @@ def get_bitcoin_info_panel(info: Optional[BitcoinInfo]) -> Panel:
     table.add_row("To Next Halving", f"{info.blocks_until_halving:,} blocks")
     halving_date = info.estimated_halving_date or "Unknown"
     table.add_row("Est. Date", halving_date)
+    
+    time_since_str = format_time_since_block(info.time_since_last_block) if info.time_since_last_block is not None else "N/A"
+    table.add_row("Last Block", time_since_str)
     
     return Panel(table, title="Bitcoin", box=ROUNDED)
 
@@ -417,11 +427,23 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
         # Fetch Bitcoin price (async, might fail)
         bitcoin_price = fetch_bitcoin_price()
         
+        # Get time since last block
+        time_since_last_block = None
+        try:
+            best_hash = rpc.get_best_block_hash()
+            block_info = rpc.get_block(best_hash)
+            block_timestamp = block_info.get("time", 0)
+            current_timestamp = int(time.time())
+            time_since_last_block = current_timestamp - block_timestamp
+        except (RPCError, Exception):
+            pass  # If we can't get block time, just show N/A
+        
         bitcoin_info = BitcoinInfo(
             price_usd=bitcoin_price,
             current_subsidy=current_subsidy,
             blocks_until_halving=blocks_until_halving,
-            estimated_halving_date=halving_date
+            estimated_halving_date=halving_date,
+            time_since_last_block=time_since_last_block
         )
         
         return snap, view, proj, bitcoin_info, None

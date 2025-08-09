@@ -97,3 +97,9 @@ class BitcoinRPC:
 
     def get_block_template(self) -> Dict[str, Any]:
         return self.call("getblocktemplate", {"rules": ["segwit"]})
+    
+    def get_best_block_hash(self) -> str:
+        return self.call("getbestblockhash")
+    
+    def get_block(self, block_hash: str, verbosity: int = 1) -> Dict[str, Any]:
+        return self.call("getblock", block_hash, verbosity)
