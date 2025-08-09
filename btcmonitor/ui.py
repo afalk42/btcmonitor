@@ -360,8 +360,8 @@ def get_mempool_panel(view: Optional[MempoolView]) -> Panel:
     text.append(ascii_histogram(view.fee_buckets))
     return Panel(text, title="Mempool", box=ROUNDED)
 
-def get_top_transactions_panel(view: Optional[MempoolView], bitcoin_price: Optional[float], terminal_width: Optional[int] = None) -> Panel:
-    global _initial_cache_loading
+def get_top_transactions_panel(view: Optional[MempoolView], bitcoin_price: Optional[float], terminal_width: Optional[int] = None, panel_height: Optional[int] = None) -> Panel:
+    global _initial_cache_loading, _transaction_scroll_offset
     
     if not view:
         return Panel(Text("Loading..."), title="Largest Transactions", box=ROUNDED)
@@ -376,6 +376,22 @@ def get_top_transactions_panel(view: Optional[MempoolView], bitcoin_price: Optio
     # Hide Fee US$ column when total terminal width < 114 characters
     show_fee_usd_column = terminal_width is None or terminal_width >= 114
     
+    # Calculate how many rows can fit in the panel
+    # Account for title and header only (roughly 2 lines: title + header)
+    available_height = (panel_height or 20) - 2
+    visible_rows = max(1, available_height)
+    
+    # Limit scroll offset to valid range
+    total_transactions = len(view.top_transactions)
+    max_scroll = max(0, total_transactions - visible_rows)
+    _transaction_scroll_offset = min(_transaction_scroll_offset, max_scroll)
+    _transaction_scroll_offset = max(0, _transaction_scroll_offset)
+    
+    # Get the visible slice of transactions
+    start_idx = _transaction_scroll_offset
+    end_idx = min(start_idx + visible_rows, total_transactions)
+    visible_transactions = view.top_transactions[start_idx:end_idx]
+    
     # Create table with headers
     table = Table(show_header=True, header_style="bold cyan", box=None, pad_edge=False)
     table.add_column("TxID", style="yellow", width=12)
@@ -386,8 +402,8 @@ def get_top_transactions_panel(view: Optional[MempoolView], bitcoin_price: Optio
     if show_fee_usd_column:
         table.add_column("Fee US$", style="bright_green", justify="right", width=10)
     
-    # Show top 100 transactions (or fewer if available)
-    for tx in view.top_transactions[:100]:
+    # Show visible transactions
+    for tx in visible_transactions:
         txid_short = format_txid(tx.txid)
         amount_btc = f"{tx.amount_btc:.4f}"
         
@@ -406,7 +422,12 @@ def get_top_transactions_panel(view: Optional[MempoolView], bitcoin_price: Optio
         else:
             table.add_row(txid_short, amount_btc, amount_usd, fee_sat_vb)
     
-    return Panel(table, title="Largest Transactions", box=ROUNDED)
+    # Create scroll indicator in title
+    scroll_info = ""
+    if total_transactions > visible_rows:
+        scroll_info = f" ({start_idx + 1}-{end_idx} of {total_transactions})"
+    
+    return Panel(table, title=f"Largest Transactions{scroll_info}", box=ROUNDED)
 
 
 def get_projection_panel(proj: Optional[BlockProjection], console: Console) -> Panel:
@@ -610,6 +631,9 @@ _last_block_height: int = 0  # Track block height to detect new blocks
 _initial_cache_loading: bool = False  # Track if initial cache loading is in progress
 _cache_loading_thread: Optional[threading.Thread] = None
 
+# Scroll state for transactions list
+_transaction_scroll_offset: int = 0  # Current scroll position
+
 def _load_transactions_background(rpc: BitcoinRPC, txids_to_process: List[str], mem_verbose: Dict[str, Dict]):
     """Background thread function to load transaction data"""
     global _transaction_data_cache, _initial_cache_loading
@@ -754,7 +778,7 @@ def fetch_top_transactions(rpc: BitcoinRPC, mem_verbose: Dict[str, Dict], curren
 
 def keyboard_listener():
     """Background thread to listen for single keypress input"""
-    global _quit_requested
+    global _quit_requested, _transaction_scroll_offset
     
     try:
         while not _quit_requested:
@@ -765,6 +789,24 @@ def keyboard_listener():
                 if key.lower() == 'q':
                     _quit_requested = True
                     break
+                elif key == readchar.key.UP:
+                    # Scroll up (show earlier transactions)
+                    _transaction_scroll_offset = max(0, _transaction_scroll_offset - 1)
+                elif key == readchar.key.DOWN:
+                    # Scroll down (show later transactions)
+                    _transaction_scroll_offset += 1
+                elif key == readchar.key.PAGE_UP:
+                    # Page up (scroll by 10)
+                    _transaction_scroll_offset = max(0, _transaction_scroll_offset - 10)
+                elif key == readchar.key.PAGE_DOWN:
+                    # Page down (scroll by 10)
+                    _transaction_scroll_offset += 10
+                elif key == readchar.key.HOME:
+                    # Go to top
+                    _transaction_scroll_offset = 0
+                elif key == readchar.key.END:
+                    # Go to bottom - set to a large value, will be bounded in display function
+                    _transaction_scroll_offset = 999999
             except (KeyboardInterrupt, EOFError):
                 # Handle Ctrl-C or EOF
                 break
@@ -817,9 +859,13 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
             layout["bitcoin_info"].update(get_bitcoin_info_panel(bitcoin_info))
             layout["node"].update(get_node_panel(snap, err))
             layout["mempool"].update(get_mempool_panel(mem_view))
-            # Pass terminal width for dynamic column hiding
+            # Pass terminal dimensions for dynamic column hiding and scrolling
             terminal_width = console.size.width
-            layout["top_transactions"].update(get_top_transactions_panel(mem_view, bitcoin_info.price_usd if bitcoin_info else None, terminal_width))
+            terminal_height = console.size.height
+            # Calculate approximate height available for the transactions panel
+            # Account for: top panels (7 lines) + mempool panel (15 lines) only
+            transactions_panel_height = terminal_height - 7 - 15
+            layout["top_transactions"].update(get_top_transactions_panel(mem_view, bitcoin_info.price_usd if bitcoin_info else None, terminal_width, transactions_panel_height))
             layout["projection"].update(get_projection_panel(proj, console))
             console.set_window_title("btcmonitor")
             live.update(layout, refresh=True)

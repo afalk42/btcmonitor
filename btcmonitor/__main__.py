@@ -10,7 +10,7 @@ from .ui import render_dashboard
 def parse_args(argv=None):
     p = argparse.ArgumentParser(
         prog="btcmonitor", 
-        description="Terminal Bitcoin Core monitor. Press 'q' to quit or use Ctrl-C."
+        description="Terminal Bitcoin Core monitor. Use arrow keys to scroll transactions. Press 'q' to quit or use Ctrl-C."
     )
     p.add_argument("--rpc-host", default=os.getenv("BITCOIN_RPC_HOST", "127.0.0.1"))
     p.add_argument("--rpc-port", type=int, default=int(os.getenv("BITCOIN_RPC_PORT", 8332)))
