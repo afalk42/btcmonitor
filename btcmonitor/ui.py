@@ -194,8 +194,15 @@ def build_fee_buckets(mempool: Dict[str, Dict]) -> List[Tuple[str, int]]:
     labels: List[Tuple[str, int]] = []
     for i, vb in enumerate(vbytes_per_band):
         lo = bands[i]
-        hi = (bands[i + 1] - 1) if i + 1 < len(bands) else lo
-        label = f"{lo}-{hi} sat/vB" if i + 1 < len(bands) else f">= {lo} sat/vB"
+        if i == 0:
+            # First band: "< 2 sat/vB"
+            label = f"< {bands[i + 1]}  sat/vB"
+        elif i == len(bands) - 1:
+            # Last band: "1000+ sat/vB"
+            label = f"{lo}+ sat/vB"
+        else:
+            # Middle bands: "2+ sat/vB", "3+ sat/vB", etc.
+            label = f"{lo}+ sat/vB"
         labels.append((label, vb))
     return labels
 
@@ -278,12 +285,12 @@ def ascii_histogram(buckets: List[Tuple[str, int]], max_width: int = 40) -> Text
         bar_len = 0 if max_vb == 0 else int((vb / max_vb) * max_width)
         
         # Extract fee rate from label for coloring
-        if label.startswith(">="):
-            # Handle ">= 1000 sat/vB" format
-            fee_rate = float(label.split()[1])
+        if label.startswith("<"):
+            # Handle "< 2 sat/vB" format - use 1 as representative fee rate
+            fee_rate = 1.0
         else:
-            # Handle "1-2 sat/vB" format
-            fee_rate = float(label.split("-")[0])
+            # Handle "2+ sat/vB", "3+ sat/vB", "1000+ sat/vB", etc. format
+            fee_rate = float(label.split("+")[0])
         color = get_fee_color(fee_rate)
         
         bar = "█" * bar_len
