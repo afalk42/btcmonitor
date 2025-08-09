@@ -103,3 +103,6 @@ class BitcoinRPC:
     
     def get_block(self, block_hash: str, verbosity: int = 1) -> Dict[str, Any]:
         return self.call("getblock", block_hash, verbosity)
+    
+    def get_raw_transaction(self, txid: str, verbose: bool = False) -> Any:
+        return self.call("getrawtransaction", txid, verbose)

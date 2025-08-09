@@ -42,6 +42,7 @@ class MempoolView:
     usage_mb: float
     maxmempool_mb: float
     fee_buckets: List[Tuple[str, int]]  # label, vbytes
+    top_transactions: List[MempoolTransaction]  # sorted by amount descending
 
 
 @dataclass  
@@ -49,6 +50,13 @@ class Transaction:
     fee_rate: float  # sat/vB
     vbytes: int
     txid: str
+
+@dataclass
+class MempoolTransaction:
+    txid: str
+    amount_btc: float
+    fee_btc: float
+    fee_rate: float  # sat/vB
 
 @dataclass
 class BlockProjection:
@@ -72,6 +80,12 @@ def format_bytes(num: int) -> str:
             return f"{num:.0f} {unit}"
         num /= 1024
     return f"{num:.1f} TB"
+
+def format_txid(txid: str) -> str:
+    """Format transaction ID as first4...last4"""
+    if len(txid) >= 8:
+        return f"{txid[:4]}...{txid[-4:]}"
+    return txid
 
 def format_time_since_block(seconds: int) -> str:
     """Format seconds into minutes:seconds format"""
@@ -315,6 +329,37 @@ def get_mempool_panel(view: Optional[MempoolView]) -> Panel:
     text.append(ascii_histogram(view.fee_buckets))
     return Panel(text, title="Mempool", box=ROUNDED)
 
+def get_top_transactions_panel(view: Optional[MempoolView], bitcoin_price: Optional[float]) -> Panel:
+    if not view:
+        return Panel(Text("Loading..."), title="Largest Transactions", box=ROUNDED)
+    
+    if not view.top_transactions:
+        return Panel(Text(f"No transaction data available\n(Total mempool txs: {view.total_tx if view else 0})"), title="Largest Transactions", box=ROUNDED)
+    
+    # Create table with headers
+    table = Table(show_header=True, header_style="bold cyan", box=None, pad_edge=False)
+    table.add_column("TxID", style="yellow", width=12)
+    table.add_column("BTC", style="bright_green", justify="right", width=10)
+    table.add_column("USD", style="bright_green", justify="right", width=10)
+    table.add_column("Fee", style="orange1", justify="right", width=8)
+    
+    # Show top 100 transactions (or fewer if available)
+    for tx in view.top_transactions[:100]:
+        txid_short = format_txid(tx.txid)
+        amount_btc = f"{tx.amount_btc:.4f}"
+        
+        # Calculate USD amount if price available
+        if bitcoin_price:
+            amount_usd = f"${tx.amount_btc * bitcoin_price:,.0f}"
+        else:
+            amount_usd = "N/A"
+            
+        fee_btc = f"{tx.fee_btc:.6f}"
+        
+        table.add_row(txid_short, amount_btc, amount_usd, fee_btc)
+    
+    return Panel(table, title="Largest Transactions", box=ROUNDED)
+
 
 def get_projection_panel(proj: Optional[BlockProjection], console: Console) -> Panel:
     if not proj:
@@ -375,12 +420,52 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
         fee_buckets = build_fee_buckets(mem_verbose)
         usage_mb = mi.get("usage", 0) / (1000 * 1000)  # Convert bytes to MB
         maxmempool_mb = mi.get("maxmempool", 0) / (1000 * 1000)  # Convert bytes to MB
+        
+        # Extract ALL transactions and get their actual BTC output amounts
+        top_transactions = []
+        processed_count = 0
+        error_count = 0
+        total_count = len(mem_verbose)
+        
+        # Limit processing to avoid very long delays for huge mempools
+        max_to_process = min(1000, total_count)  # Process up to 1000 transactions
+        items_to_process = list(mem_verbose.items())[:max_to_process]
+        
+        for txid, tx_data in items_to_process:
+            processed_count += 1
+            fee_btc = tx_data.get("fees", {}).get("base", 0.0)
+            vbytes = tx_data.get("vsize", tx_data.get("weight", 0) // 4)
+            fee_rate = (fee_btc * 1e8) / max(1, vbytes) if vbytes > 0 else 0
+            
+            try:
+                # Get actual transaction details
+                tx_detail = rpc.get_raw_transaction(txid, True)
+                # Sum all output values to get total BTC amount
+                amount_btc = sum(float(vout.get("value", 0)) for vout in tx_detail.get("vout", []))
+                
+                if amount_btc > 0:
+                    top_transactions.append(MempoolTransaction(
+                        txid=txid,
+                        amount_btc=amount_btc,
+                        fee_btc=fee_btc,
+                        fee_rate=fee_rate
+                    ))
+            except Exception as e:
+                error_count += 1
+                # If lookup fails, continue with next transaction
+                continue
+        
+        # Sort by actual BTC output amount descending and take top 100
+        top_transactions.sort(key=lambda x: x.amount_btc, reverse=True)
+        top_transactions = top_transactions[:100]
+        
         view = MempoolView(
             total_tx=len(mem_verbose),
             total_vbytes=sum(tx.get("vsize", tx.get("weight", 0) // 4) for tx in mem_verbose.values()),
             usage_mb=usage_mb,
             maxmempool_mb=maxmempool_mb,
             fee_buckets=fee_buckets,
+            top_transactions=top_transactions,
         )
         # Projection: try getblocktemplate; fallback to mempool estimation
         proj: Optional[BlockProjection] = None
@@ -526,8 +611,13 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
         Layout(name="node"),
     )
     layout["bottom"].split_row(
-        Layout(name="mempool"),
+        Layout(name="left"),
         Layout(name="projection"),
+    )
+    # Split the left side into mempool (top) and top transactions (bottom)
+    layout["left"].split_column(
+        Layout(name="mempool"),
+        Layout(name="top_transactions"),
     )
 
     # Start keyboard listener thread
@@ -545,6 +635,7 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
             layout["bitcoin_info"].update(get_bitcoin_info_panel(bitcoin_info))
             layout["node"].update(get_node_panel(snap, err))
             layout["mempool"].update(get_mempool_panel(mem_view))
+            layout["top_transactions"].update(get_top_transactions_panel(mem_view, bitcoin_info.price_usd if bitcoin_info else None))
             layout["projection"].update(get_projection_panel(proj, console))
             console.set_window_title("btcmonitor")
             live.update(layout, refresh=True)
