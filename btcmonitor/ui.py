@@ -340,8 +340,9 @@ def get_top_transactions_panel(view: Optional[MempoolView], bitcoin_price: Optio
     table = Table(show_header=True, header_style="bold cyan", box=None, pad_edge=False)
     table.add_column("TxID", style="yellow", width=12)
     table.add_column("BTC", style="bright_green", justify="right", width=10)
-    table.add_column("USD", style="bright_green", justify="right", width=10)
-    table.add_column("Fee", style="orange1", justify="right", width=8)
+    table.add_column("US$", style="bright_green", justify="right", width=15)
+    table.add_column("sat/vB", style="orange1", justify="right", width=8)
+    table.add_column("Fee US$", style="orange1", justify="right", width=10)
     
     # Show top 100 transactions (or fewer if available)
     for tx in view.top_transactions[:100]:
@@ -351,12 +352,14 @@ def get_top_transactions_panel(view: Optional[MempoolView], bitcoin_price: Optio
         # Calculate USD amount if price available
         if bitcoin_price:
             amount_usd = f"${tx.amount_btc * bitcoin_price:,.0f}"
+            fee_usd = f"${tx.fee_btc * bitcoin_price:,.2f}"
         else:
             amount_usd = "N/A"
+            fee_usd = "N/A"
             
-        fee_btc = f"{tx.fee_btc:.6f}"
+        fee_sat_vb = f"{tx.fee_rate:.1f}"
         
-        table.add_row(txid_short, amount_btc, amount_usd, fee_btc)
+        table.add_row(txid_short, amount_btc, amount_usd, fee_sat_vb, fee_usd)
     
     return Panel(table, title="Largest Transactions", box=ROUNDED)
 
@@ -421,43 +424,8 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
         usage_mb = mi.get("usage", 0) / (1000 * 1000)  # Convert bytes to MB
         maxmempool_mb = mi.get("maxmempool", 0) / (1000 * 1000)  # Convert bytes to MB
         
-        # Extract ALL transactions and get their actual BTC output amounts
-        top_transactions = []
-        processed_count = 0
-        error_count = 0
-        total_count = len(mem_verbose)
-        
-        # Limit processing to avoid very long delays for huge mempools
-        max_to_process = min(1000, total_count)  # Process up to 1000 transactions
-        items_to_process = list(mem_verbose.items())[:max_to_process]
-        
-        for txid, tx_data in items_to_process:
-            processed_count += 1
-            fee_btc = tx_data.get("fees", {}).get("base", 0.0)
-            vbytes = tx_data.get("vsize", tx_data.get("weight", 0) // 4)
-            fee_rate = (fee_btc * 1e8) / max(1, vbytes) if vbytes > 0 else 0
-            
-            try:
-                # Get actual transaction details
-                tx_detail = rpc.get_raw_transaction(txid, True)
-                # Sum all output values to get total BTC amount
-                amount_btc = sum(float(vout.get("value", 0)) for vout in tx_detail.get("vout", []))
-                
-                if amount_btc > 0:
-                    top_transactions.append(MempoolTransaction(
-                        txid=txid,
-                        amount_btc=amount_btc,
-                        fee_btc=fee_btc,
-                        fee_rate=fee_rate
-                    ))
-            except Exception as e:
-                error_count += 1
-                # If lookup fails, continue with next transaction
-                continue
-        
-        # Sort by actual BTC output amount descending and take top 100
-        top_transactions.sort(key=lambda x: x.amount_btc, reverse=True)
-        top_transactions = top_transactions[:100]
+        # Get cached transaction data (updated once per minute)
+        top_transactions = fetch_top_transactions(rpc, mem_verbose)
         
         view = MempoolView(
             total_tx=len(mem_verbose),
@@ -570,6 +538,66 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
 
 # Global flag for quit signal
 _quit_requested = False
+
+# Global cache for transaction data
+_transaction_cache: List[MempoolTransaction] = []
+_last_transaction_fetch = 0.0
+TRANSACTION_CACHE_DURATION = 60.0  # 60 seconds
+
+def fetch_top_transactions(rpc: BitcoinRPC, mem_verbose: Dict[str, Dict]) -> List[MempoolTransaction]:
+    """Fetch transaction data with caching"""
+    global _transaction_cache, _last_transaction_fetch
+    
+    current_time = time.time()
+    
+    # Check if we have cached data that's less than 60 seconds old
+    if (current_time - _last_transaction_fetch) < TRANSACTION_CACHE_DURATION and _transaction_cache:
+        return _transaction_cache
+    
+    # Extract ALL transactions and get their actual BTC output amounts
+    top_transactions = []
+    processed_count = 0
+    error_count = 0
+    total_count = len(mem_verbose)
+    
+    # Process up to 20,000 transactions now that we cache the results
+    max_to_process = min(20000, total_count)
+    items_to_process = list(mem_verbose.items())[:max_to_process]
+    
+    for txid, tx_data in items_to_process:
+        processed_count += 1
+        fee_btc = tx_data.get("fees", {}).get("base", 0.0)
+        vbytes = tx_data.get("vsize", tx_data.get("weight", 0) // 4)
+        fee_rate = (fee_btc * 1e8) / max(1, vbytes) if vbytes > 0 else 0
+        
+        try:
+            # Get actual transaction details
+            tx_detail = rpc.get_raw_transaction(txid, True)
+            # Sum all output values to get total BTC amount
+            amount_btc = sum(float(vout.get("value", 0)) for vout in tx_detail.get("vout", []))
+            
+            if amount_btc > 0:
+                top_transactions.append(MempoolTransaction(
+                    txid=txid,
+                    amount_btc=amount_btc,
+                    fee_btc=fee_btc,
+                    fee_rate=fee_rate
+                ))
+        except Exception as e:
+            error_count += 1
+            # If lookup fails, continue with next transaction
+            continue
+    
+    # Sort by actual BTC output amount descending and take top 100
+    top_transactions.sort(key=lambda x: x.amount_btc, reverse=True)
+    top_transactions = top_transactions[:100]
+    
+    # Update cache
+    _transaction_cache = top_transactions
+    _last_transaction_fetch = current_time
+    
+    return top_transactions
+
 
 def keyboard_listener():
     """Background thread to listen for single keypress input"""
