@@ -143,7 +143,7 @@ def get_bitcoin_info_panel(info: Optional[BitcoinInfo]) -> Panel:
     table.add_row("Est. Date", halving_date)
     
     time_since_str = format_time_since_block(info.time_since_last_block) if info.time_since_last_block is not None else "N/A"
-    table.add_row("Last Block", time_since_str)
+    table.add_row("Since Last Block", time_since_str)
     
     return Panel(table, title="Bitcoin", box=ROUNDED)
 
