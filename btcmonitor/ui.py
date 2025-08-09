@@ -36,6 +36,8 @@ class NodeSnapshot:
 class MempoolView:
     total_tx: int
     total_vbytes: int
+    usage_mb: float
+    maxmempool_mb: float
     fee_buckets: List[Tuple[str, int]]  # label, vbytes
 
 
@@ -178,7 +180,7 @@ def get_node_panel(snap: Optional[NodeSnapshot], err: Optional[str]) -> Panel:
 
 def build_fee_buckets(mempool: Dict[str, Dict]) -> List[Tuple[str, int]]:
     # Fee rate buckets in sat/vB
-    bands = [1, 2, 3, 5, 8, 10, 15, 20, 30, 50, 80, 100, 150, 200, 300, 500, 800, 1000]
+    bands = [1, 2, 3, 5, 10, 20, 50, 100, 500, 1000]
     vbytes_per_band = [0 for _ in bands]
     for tx in mempool.values():
         fee_sat = int(tx.get("fees", {}).get("base", 0) * 1e8)
@@ -274,8 +276,20 @@ def ascii_histogram(buckets: List[Tuple[str, int]], max_width: int = 40) -> Text
     max_vb = max((vb for _, vb in buckets), default=1)
     for label, vb in buckets:
         bar_len = 0 if max_vb == 0 else int((vb / max_vb) * max_width)
-        bar = "#" * bar_len
-        text.append(f"{label:>14} | {bar} {vb}\n")
+        
+        # Extract fee rate from label for coloring
+        if label.startswith(">="):
+            # Handle ">= 1000 sat/vB" format
+            fee_rate = float(label.split()[1])
+        else:
+            # Handle "1-2 sat/vB" format
+            fee_rate = float(label.split("-")[0])
+        color = get_fee_color(fee_rate)
+        
+        bar = "█" * bar_len
+        text.append(f"{label:>14} | ")
+        text.append(bar, style=color)
+        text.append(f" {vb}\n")
     return text
 
 
@@ -283,7 +297,7 @@ def get_mempool_panel(view: Optional[MempoolView]) -> Panel:
     if not view:
         return Panel(Text("…"), title="Mempool", box=ROUNDED)
     text = Text()
-    text.append(f"Total: {view.total_tx} txs / {format_bytes(view.total_vbytes)}\n\n")
+    text.append(f"Total: {view.total_tx} txs | Memory Usage: {view.usage_mb:.2f} MB / {view.maxmempool_mb:.2f} MB\n\n")
     text.append(ascii_histogram(view.fee_buckets))
     return Panel(text, title="Mempool", box=ROUNDED)
 
@@ -345,9 +359,13 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
             difficulty=float(bi.get("difficulty", 0.0)),
         )
         fee_buckets = build_fee_buckets(mem_verbose)
+        usage_mb = mi.get("usage", 0) / (1000 * 1000)  # Convert bytes to MB
+        maxmempool_mb = mi.get("maxmempool", 0) / (1000 * 1000)  # Convert bytes to MB
         view = MempoolView(
             total_tx=len(mem_verbose),
             total_vbytes=sum(tx.get("vsize", tx.get("weight", 0) // 4) for tx in mem_verbose.values()),
+            usage_mb=usage_mb,
+            maxmempool_mb=maxmempool_mb,
             fee_buckets=fee_buckets,
         )
         # Projection: try getblocktemplate; fallback to mempool estimation
