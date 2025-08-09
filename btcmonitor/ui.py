@@ -30,6 +30,8 @@ class NodeSnapshot:
     verification_progress: float
     chain: str
     peers: int
+    inbound_peers: int
+    outbound_peers: int
     mempool_bytes: int
     mempool_tx: int
     difficulty: float
@@ -170,10 +172,35 @@ def get_system_panel() -> Panel:
     cpu = psutil.cpu_percent(interval=None)
     mem = psutil.virtual_memory()
     swap = psutil.swap_memory()
+    
+    # Get additional system info
+    try:
+        boot_time = psutil.boot_time()
+        uptime_seconds = time.time() - boot_time
+        uptime_hours = int(uptime_seconds // 3600)
+        uptime_days = uptime_hours // 24
+        uptime_hours = uptime_hours % 24
+        
+        process_count = len(psutil.pids())
+        
+        # Try to get load average (Unix/Linux/macOS)
+        try:
+            load_avg = psutil.getloadavg()[0]  # 1-minute load average
+            load_info = f"Load: {load_avg:.2f}"
+        except (AttributeError, OSError):
+            # Fallback for systems without load average
+            load_info = f"Procs: {process_count}"
+            
+    except Exception:
+        uptime_days = uptime_hours = 0
+        load_info = "N/A"
+    
     text = Text()
     text.append(f"CPU: {cpu:5.1f}%\n")
     text.append(f"RAM: {mem.percent:5.1f}% of {format_bytes(mem.total)}\n")
     text.append(f"SWP: {swap.percent:5.1f}% of {format_bytes(swap.total)}\n")
+    text.append(f"Uptime: {uptime_days}d {uptime_hours}h\n")
+    text.append(f"{load_info}\n")
     return Panel(text, title="System", box=ROUNDED)
 
 
@@ -189,7 +216,11 @@ def get_node_panel(snap: Optional[NodeSnapshot], err: Optional[str]) -> Panel:
     table.add_row("Height", str(snap.height))
     table.add_row("Headers", str(snap.headers))
     table.add_row("Verify", f"{snap.verification_progress*100:.2f}%")
-    table.add_row("Peers", str(snap.peers))
+    
+    # Show peer breakdown with inbound/outbound counts
+    peer_info = f"{snap.peers} (In: {snap.inbound_peers} / Out: {snap.outbound_peers})"
+    table.add_row("Peers", peer_info)
+    
     table.add_row("Mempool", f"{snap.mempool_tx} txs / {format_bytes(snap.mempool_bytes)}")
     table.add_row("Difficulty", f"{snap.difficulty:.4g}")
     return Panel(table, title="Bitcoin Core", box=ROUNDED)
@@ -415,12 +446,25 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
         mi = rpc.get_mempool_info()
         peers = rpc.get_connection_count()
         mem_verbose = rpc.get_raw_mempool(True)
+        
+        # Get detailed peer information for inbound/outbound breakdown
+        try:
+            peer_info = rpc.get_peer_info()
+            inbound_count = sum(1 for peer in peer_info if peer.get("inbound", False))
+            outbound_count = len(peer_info) - inbound_count
+        except Exception:
+            # Fallback if peer info is not available
+            inbound_count = 0
+            outbound_count = int(peers)
+        
         snap = NodeSnapshot(
             height=int(bi.get("blocks", 0)),
             headers=int(bi.get("headers", 0)),
             verification_progress=float(bi.get("verificationprogress", 0.0)),
             chain=str(bi.get("chain", "")),
             peers=int(peers),
+            inbound_peers=inbound_count,
+            outbound_peers=outbound_count,
             mempool_bytes=int(mi.get("bytes", 0)),
             mempool_tx=int(mi.get("size", 0)),
             difficulty=float(bi.get("difficulty", 0.0)),
@@ -743,9 +787,10 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
         Layout(name="projection"),
     )
     # Split the left side into mempool (top) and top transactions (bottom)
+    # Give mempool a fixed size since it has fixed content, let transactions panel use remaining space
     layout["left"].split_column(
-        Layout(name="mempool"),
-        Layout(name="top_transactions"),
+        Layout(name="mempool", size=15),  # Fixed size for mempool (title + content + borders)
+        Layout(name="top_transactions"),  # Takes remaining space
     )
 
     # Start keyboard listener thread

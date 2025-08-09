@@ -106,3 +106,6 @@ class BitcoinRPC:
     
     def get_raw_transaction(self, txid: str, verbose: bool = False) -> Any:
         return self.call("getrawtransaction", txid, verbose)
+    
+    def get_peer_info(self) -> Any:
+        return self.call("getpeerinfo")
