@@ -1,6 +1,8 @@
 from __future__ import annotations
 import time
 import math
+import threading
+import sys
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
@@ -8,6 +10,7 @@ import urllib.request
 import json
 
 import psutil
+import readchar
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
@@ -476,7 +479,37 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
         return None, None, None, None, str(e)
 
 
+# Global flag for quit signal
+_quit_requested = False
+
+def keyboard_listener():
+    """Background thread to listen for single keypress input"""
+    global _quit_requested
+    
+    try:
+        while not _quit_requested:
+            try:
+                # readchar.readkey() blocks until a key is pressed
+                # but doesn't interfere with Rich's display
+                key = readchar.readkey()
+                if key.lower() == 'q':
+                    _quit_requested = True
+                    break
+            except (KeyboardInterrupt, EOFError):
+                # Handle Ctrl-C or EOF
+                break
+            except Exception:
+                # Handle any other readchar exceptions
+                break
+    except Exception:
+        # Silently handle any other exceptions
+        pass
+
+
 def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
+    global _quit_requested
+    _quit_requested = False
+    
     console = Console()
     layout = Layout()
     layout.split_column(
@@ -493,8 +526,16 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
         Layout(name="projection"),
     )
 
+    # Start keyboard listener thread
+    keyboard_thread = threading.Thread(target=keyboard_listener, daemon=True)
+    keyboard_thread.start()
+
     with Live(console=console, auto_refresh=False, screen=True, transient=False) as live:
         while True:
+            # Check for quit signal
+            if _quit_requested:
+                break
+                
             snap, mem_view, proj, bitcoin_info, err = gather_snapshot(rpc)
             layout["sys"].update(get_system_panel())
             layout["bitcoin_info"].update(get_bitcoin_info_panel(bitcoin_info))
