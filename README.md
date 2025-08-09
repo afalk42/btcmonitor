@@ -11,7 +11,7 @@ A terminal dashboard (TUI) that monitors a local Bitcoin Core node using its JSO
   - Next block template as well as expected tx count, weight, and fee rate bands
   - Scrollable list of the 100 largest transactions in the mempool sorted by BTC output
 
-![Screenshot](/screenshot.png]
+![Screenshot](/screenshot.png)
 
 ## Installation
 
