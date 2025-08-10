@@ -33,6 +33,8 @@ sudo apt install python3 python3-pip python3-venv
 
 #### On MacOS and Ubuntu/Linux
 
+On both MacOS and Ubunut using pip in Python3 requires the use of a venv virtual environment.
+
 ```bash
 git clone https://github.com/afalk42/btcmonitor
 python3 -m venv ~/.venv/
@@ -42,6 +44,8 @@ pip install -e .
 ```
 
 #### On Windows 11
+
+It appears that using a Python venv is not required on Windows.
 
 ```bash
 git clone https://github.com/afalk42/btcmonitor
