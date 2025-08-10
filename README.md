@@ -2,8 +2,8 @@
 
 A terminal dashboard (TUI) that monitors a local Bitcoin Core node using its JSON-RPC interface.
 
-- Cross-platform: macOS and Ubuntu/Linux
-- Uses cookie auth detection or `bitcoin.conf`
+- Cross-platform using Python3 and [Rich](https://github.com/Textualize/rich): tested on macOS, Ubuntu, Windows
+- Uses cookie auth detection or `bitcoin.conf` as well as optional command-line parameters for rpc authentication
 - Visualizes the following data about your bitcoin node in a dashboard:
   - Node health, blockchain height, peer information
   - Bitcoin price, block subsidy, # of blocks until next halving, time since last block
