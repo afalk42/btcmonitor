@@ -31,10 +31,20 @@ sudo apt install python3 python3-pip python3-venv
 
 ### Installation
 
+#### On MacOS and Ubuntu/Linux
+
 ```bash
 git clone https://github.com/afalk42/btcmonitor
 python3 -m venv ~/.venv/
 source ~/.venv/bin/activate
+cd btcmonitor
+pip install -e .
+```
+
+#### On Windows 11
+
+```bash
+git clone https://github.com/afalk42/btcmonitor
 cd btcmonitor
 pip install -e .
 ```
