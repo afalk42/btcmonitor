@@ -255,6 +255,14 @@ def build_fee_buckets(mempool: Dict[str, Dict]) -> List[Tuple[str, int]]:
     return labels
 
 
+def bucket_fee_rate(label: str) -> float:
+    """Return a representative sat/vB rate for a build_fee_buckets label."""
+    if label.lstrip().startswith("<"):
+        # The lowest band (< 2 sat/vB) uses 1 sat/vB for estimation/coloring.
+        return 1.0
+    return float(label.split()[0].rstrip("+"))
+
+
 def get_fee_color(fee_rate: float) -> str:
     """Get color for fee rate visualization"""
     if fee_rate >= 100:
@@ -337,12 +345,7 @@ def ascii_histogram(buckets: List[Tuple[str, int]], max_width: int = 40) -> Text
             bar_len = 1 + int((vb / max_vb) * max_width)
         
         # Extract fee rate from label for coloring
-        if label.startswith("<"):
-            # Handle "< 2 sat/vB" format - use 1 as representative fee rate
-            fee_rate = 1.0
-        else:
-            # Handle "2+ sat/vB", "3+ sat/vB", "1000+ sat/vB", etc. format
-            fee_rate = float(label.split("+")[0])
+        fee_rate = bucket_fee_rate(label)
         color = get_fee_color(fee_rate)
         
         bar = "█" * bar_len
@@ -545,7 +548,9 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
             
         except RPCError:
             # Fallback: estimate from mempool using greedy algorithm
-            sorted_buckets = sorted(fee_buckets, key=lambda x: int(x[0].split()[0].replace(">=", "").split("-")[0]), reverse=True)
+            sorted_buckets = sorted(
+                fee_buckets, key=lambda bucket: bucket_fee_rate(bucket[0]), reverse=True
+            )
             capacity = 1_000_000  # ~1M vbytes
             acc_vb = 0
             proj_buckets: List[Tuple[str, int]] = []
@@ -560,7 +565,7 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
                 if take > 0:
                     proj_buckets.append((label, take))
                     # Parse fee rate from label 
-                    fee_rate = int(label.split()[0].replace(">=", "").split("-")[0])
+                    fee_rate = bucket_fee_rate(label)
                     # Create synthetic transactions (group by ~250 vbytes each)
                     tx_size = 250
                     num_txs = max(1, take // tx_size)
