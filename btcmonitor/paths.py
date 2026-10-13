@@ -1,7 +1,6 @@
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Subdirectory of the data directory that Bitcoin Core uses for each network
 NETWORK_SUBDIRS = {
@@ -34,13 +33,13 @@ def default_base_datadir() -> Path:
     return home / ".bitcoin"
 
 
-def discover_default_datadir(network: str = "mainnet", datadir: Optional[Path] = None) -> Path:
+def discover_default_datadir(network: str = "mainnet", datadir: Path | None = None) -> Path:
     """Network-specific data directory, under `datadir` if given, else under the platform default"""
     base = Path(datadir).expanduser() if datadir else default_base_datadir()
     subdir = NETWORK_SUBDIRS.get(network, "")
     return base / subdir if subdir else base
 
 
-def discover_cookie_path(network: str = "mainnet", datadir: Optional[Path] = None) -> Optional[Path]:
+def discover_cookie_path(network: str = "mainnet", datadir: Path | None = None) -> Path | None:
     cookie = discover_default_datadir(network, datadir) / ".cookie"
     return cookie if cookie.exists() else None
