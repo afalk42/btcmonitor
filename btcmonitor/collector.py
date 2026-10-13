@@ -139,7 +139,9 @@ class Collector:
 
         blocks_until_halving, halving_date = calculate_halving_info(height)
         bitcoin = BitcoinInfo(
-            price_usd=self.price_feed.get(),
+            price=self.price_feed.get(),
+            currency=self.price_feed.currency if self.price_feed.enabled else None,
+            price_unsupported=self.price_feed.unsupported,
             current_subsidy=get_current_subsidy(height),
             blocks_until_halving=blocks_until_halving,
             estimated_halving_date=halving_date,

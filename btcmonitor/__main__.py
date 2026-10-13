@@ -2,12 +2,21 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from pathlib import Path
 
 from .app import run_dashboard
 from .conf import read_bitcoin_conf
 from .paths import DEFAULT_RPC_PORTS, default_base_datadir, discover_default_datadir
+from .price import PriceFeed
 from .rpc import BitcoinRPC, RPCConfig
+
+
+def currency_code(value: str) -> str:
+    code = value.strip().lower()
+    if not re.fullmatch(r"[a-z]{3,5}", code):
+        raise argparse.ArgumentTypeError(f"expected a currency code such as usd or eur, got {value!r}")
+    return code
 
 
 def parse_args(argv=None):
@@ -40,6 +49,18 @@ def parse_args(argv=None):
         "(default: bitcoin.conf in the data directory)",
     )
     p.add_argument("--refresh", type=float, default=2.0, help="Refresh rate in Hz (default 2)")
+    p.add_argument(
+        "--currency",
+        type=currency_code,
+        default=os.getenv("BTCMONITOR_CURRENCY", "usd"),
+        help="Currency for the BTC price, e.g. usd, eur, gbp, jpy (default usd)",
+    )
+    p.add_argument(
+        "--no-price",
+        action="store_true",
+        default=os.getenv("BTCMONITOR_NO_PRICE", "") not in ("", "0"),
+        help="Do not fetch the BTC price from CoinGecko, which reveals this machine's IP address to it",
+    )
     return p.parse_args(argv)
 
 
@@ -77,7 +98,7 @@ def main(argv=None):
     args = parse_args(argv)
     rpc = BitcoinRPC(build_config(args))
     try:
-        run_dashboard(rpc, refresh_hz=args.refresh)
+        run_dashboard(rpc, refresh_hz=args.refresh, price_feed=PriceFeed(args.currency, enabled=not args.no_price))
     except KeyboardInterrupt:
         pass
     print("Exiting…")

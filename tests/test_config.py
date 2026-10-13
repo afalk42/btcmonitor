@@ -50,6 +50,27 @@ class NetworkDefaultsTests(unittest.TestCase):
             self.assertEqual(discover_default_datadir("mainnet"), Path("/home/u/.bitcoin"))
 
 
+class PriceOptionTests(unittest.TestCase):
+    def args(self, *argv, env=None):
+        with patch.dict(os.environ, env or {}, clear=True):
+            return parse_args(list(argv))
+
+    def test_defaults(self):
+        args = self.args()
+        self.assertEqual((args.currency, args.no_price), ("usd", False))
+
+    def test_currency_is_normalized_and_validated(self):
+        self.assertEqual(self.args("--currency", " EUR ").currency, "eur")
+        with patch("sys.stderr"), self.assertRaises(SystemExit):
+            self.args("--currency", "euro$")
+
+    def test_no_price_from_flag_or_environment(self):
+        self.assertTrue(self.args("--no-price").no_price)
+        self.assertTrue(self.args(env={"BTCMONITOR_NO_PRICE": "1"}).no_price)
+        self.assertFalse(self.args(env={"BTCMONITOR_NO_PRICE": "0"}).no_price)
+        self.assertEqual(self.args(env={"BTCMONITOR_CURRENCY": "gbp"}).currency, "gbp")
+
+
 class DatadirTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

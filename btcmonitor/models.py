@@ -72,11 +72,13 @@ class BlockProjection:
 
 @dataclass
 class BitcoinInfo:
-    price_usd: float | None
+    price: float | None  # in `currency`
     current_subsidy: float
     blocks_until_halving: int
     estimated_halving_date: str | None
     last_block_time: int | None  # unix timestamp of the best block
+    currency: str | None = "usd"  # None when price lookups are turned off
+    price_unsupported: bool = False  # the price source does not quote `currency`
 
 
 @dataclass

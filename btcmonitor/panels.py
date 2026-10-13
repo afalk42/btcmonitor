@@ -14,7 +14,15 @@ from rich.table import Table
 from rich.text import Text
 
 from .fees import bucket_fee_rate
-from .formatting import format_age, format_bytes, format_duration, format_time_since_block, format_txid
+from .formatting import (
+    fiat_label,
+    format_age,
+    format_bytes,
+    format_duration,
+    format_fiat,
+    format_time_since_block,
+    format_txid,
+)
 from .models import (
     BitcoinInfo,
     BlockProjection,
@@ -39,8 +47,8 @@ FEE_COLORS = [
 # Throwaway console used only to measure how text wraps
 _MEASURE = Console(file=io.StringIO(), width=200)
 
-# Hide the Fee US$ column when the terminal is narrower than this
-FEE_USD_MIN_TERMINAL_WIDTH = 114
+# Hide the fiat fee column (e.g. "Fee US$") when the terminal is narrower than this
+FEE_FIAT_MIN_TERMINAL_WIDTH = 114
 
 
 def get_fee_color(fee_rate: float) -> str:
@@ -58,7 +66,11 @@ def get_bitcoin_info_panel(info: BitcoinInfo | None, now: float | None = None) -
     table = Table.grid(padding=(0, 1))
     table.add_column(justify="right", style="bold orange1")
     table.add_column()
-    table.add_row("Price", f"${info.price_usd:,.0f}" if info.price_usd else "N/A")
+    if info.currency is not None:
+        if info.price_unsupported:
+            table.add_row("Price", Text(f"{info.currency.upper()} not supported", style="dim"))
+        else:
+            table.add_row("Price", format_fiat(info.price, info.currency) if info.price else "N/A")
     table.add_row("Block Subsidy", f"{info.current_subsidy:.3f} BTC")
     table.add_row("To Next Halving", f"{info.blocks_until_halving:,} blocks")
     table.add_row("Est. Date", info.estimated_halving_date or "Unknown")
@@ -158,7 +170,9 @@ def get_top_transactions_panel(
     terminal_width: int | None = None,
     panel_height: int | None = None,
     scroll_offset: int = 0,
+    currency: str | None = "usd",
 ) -> Panel:
+    """`bitcoin_price` is in `currency`; with currency None (price lookups off) no fiat columns are shown"""
     title = "Largest Transactions"
     if not view:
         return Panel(Text("Loading..."), title=title, box=ROUNDED)
@@ -170,7 +184,8 @@ def get_top_transactions_panel(
             message = f"No transaction data available\n(Total mempool txs: {view.total_tx})"
         return Panel(Text(message), title=title, box=ROUNDED)
 
-    show_fee_usd_column = terminal_width is None or terminal_width >= FEE_USD_MIN_TERMINAL_WIDTH
+    show_fiat = currency is not None
+    show_fiat_fee = show_fiat and (terminal_width is None or terminal_width >= FEE_FIAT_MIN_TERMINAL_WIDTH)
     visible_rows = visible_transaction_rows(panel_height)
     total_transactions = len(view.top_transactions)
     start_idx = max(0, min(scroll_offset, max_transaction_scroll(view, panel_height)))
@@ -179,20 +194,24 @@ def get_top_transactions_panel(
     table = Table(show_header=True, header_style="bold cyan", box=None, pad_edge=False)
     table.add_column("TxID", style="yellow", width=12)
     table.add_column("BTC", style="orange1", justify="right", width=10)
-    table.add_column("US$", style="bright_green", justify="right", width=15)
+    if show_fiat:
+        table.add_column(fiat_label(currency), style="bright_green", justify="right", width=15)
     table.add_column("sat/vB", style="orange1", justify="right", width=8)
-    if show_fee_usd_column:
-        table.add_column("Fee US$", style="bright_green", justify="right", width=10)
+    if show_fiat_fee:
+        table.add_column(f"Fee {fiat_label(currency)}", style="bright_green", justify="right", width=10)
 
     for tx in view.top_transactions[start_idx:end_idx]:
-        if bitcoin_price:
-            amount_usd = f"${tx.amount_btc * bitcoin_price:,.0f}"
-            fee_usd = f"${tx.fee_btc * bitcoin_price:,.2f}"
+        if bitcoin_price and show_fiat:
+            amount_fiat = format_fiat(tx.amount_btc * bitcoin_price, currency)
+            fee_fiat = format_fiat(tx.fee_btc * bitcoin_price, currency, decimals=2)
         else:
-            amount_usd = fee_usd = "N/A"
-        row = [format_txid(tx.txid), f"{tx.amount_btc:.4f}", amount_usd, f"{tx.fee_rate:.1f}"]
-        if show_fee_usd_column:
-            row.append(fee_usd)
+            amount_fiat = fee_fiat = "N/A"
+        row = [format_txid(tx.txid), f"{tx.amount_btc:.4f}"]
+        if show_fiat:
+            row.append(amount_fiat)
+        row.append(f"{tx.fee_rate:.1f}")
+        if show_fiat_fee:
+            row.append(fee_fiat)
         table.add_row(*row)
 
     if total_transactions > visible_rows:
