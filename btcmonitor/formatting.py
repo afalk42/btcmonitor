@@ -25,6 +25,15 @@ def format_time_since_block(seconds: int) -> str:
     return f"{minutes}:{remaining_seconds:02d}"
 
 
+def format_age(seconds: float) -> str:
+    """Compact age of a block: "<1m", "12m", then as format_duration from an hour up"""
+    if seconds < 60:
+        return "<1m"
+    if seconds < 3600:
+        return f"{int(seconds) // 60}m"
+    return format_duration(seconds)
+
+
 def format_duration(seconds: float) -> str:
     """Rough human duration with the two largest units, e.g. "2d 3h", "4h 05m", "12m 30s", "45s\""""
     seconds = int(seconds)

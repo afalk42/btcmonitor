@@ -8,7 +8,7 @@ from rich.console import Console
 from btcmonitor.app import Dashboard
 from btcmonitor.collector import Collector
 from btcmonitor.keyboard import KeyReader
-from btcmonitor.models import DashboardData, MempoolTransaction, MempoolView, SyncProgress
+from btcmonitor.models import DashboardData, MempoolTransaction, MempoolView, RecentBlock, SyncProgress
 
 
 def key_reader(*keys):
@@ -77,6 +77,14 @@ class DashboardTests(unittest.TestCase):
         self.dashboard.update_layout(data_with_transactions(3))  # caught up
         self.assertFalse(self.dashboard.layout["sync"].visible)
         self.assertTrue(self.dashboard.layout["bottom"].visible)
+
+    def test_recent_blocks_panel_below_next_block_panel(self):
+        block = RecentBlock(971274, "aa", 1700000000, 4424, 1609728, 0.02, "F2Pool")
+        self.dashboard.update_layout(DashboardData(recent_blocks=[block]))
+        self.console.print(self.dashboard.layout)
+        output = self.output.getvalue()
+        self.assertLess(output.index("Next Block Template"), output.index("Recent Blocks"))
+        self.assertIn("F2Pool", output)
 
     def test_node_error_is_shown(self):
         self.dashboard.update_layout(DashboardData(error="connection refused"))

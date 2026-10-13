@@ -1,7 +1,9 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from btcmonitor.blocks import RecentBlocks
 from btcmonitor.collector import Collector
+from btcmonitor.models import RecentBlock
 from btcmonitor.price import PriceFeed
 from btcmonitor.rpc import BitcoinRPC, RPCError
 from btcmonitor.transactions import TransactionTracker
@@ -34,6 +36,9 @@ class CollectorTestCase(unittest.TestCase):
         self.tracker.update.return_value = []
         self.tracker.loading = False
         self.collector = Collector(self.rpc, price_feed=self.price_feed, tracker=self.tracker)
+        self.collector.recent_blocks = Mock(spec=RecentBlocks)
+        self.block = RecentBlock(100, "best", 1700000000, 10, 1000, 0.01, "F2Pool")
+        self.collector.recent_blocks.update.return_value = [self.block]
 
     def collect(self):
         data = self.collector.collect()
@@ -193,6 +198,24 @@ class FeeEstimateTests(CollectorTestCase):
             self.collect()
             self.collect()
         self.assertEqual(self.rpc.estimate_smart_fee.call_count, 4)
+
+
+class RecentBlocksTests(CollectorTestCase):
+    def test_recent_blocks_follow_the_best_block(self):
+        self.rpc.get_blockchain_info.return_value = {"blocks": 100, "bestblockhash": "best"}
+        self.assertEqual(self.collect().recent_blocks, [self.block])
+        self.collector.recent_blocks.update.assert_called_with("best", 100)
+
+    def test_lookup_failure_keeps_previous_list(self):
+        self.rpc.get_blockchain_info.return_value = {"blocks": 100, "bestblockhash": "best"}
+        self.collect()
+        self.collector.recent_blocks.update.side_effect = RPCError("Block not available (pruned data)")
+        self.assertEqual(self.collect().recent_blocks, [self.block])
+
+    def test_not_fetched_during_ibd(self):
+        self.rpc.get_blockchain_info.return_value = {"blocks": 5, "headers": 10, "initialblockdownload": True}
+        self.assertIsNone(self.collect().recent_blocks)
+        self.collector.recent_blocks.update.assert_not_called()
 
 
 class InitialBlockDownloadTests(CollectorTestCase):

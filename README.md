@@ -10,6 +10,7 @@ A terminal dashboard (TUI) that monitors a local Bitcoin Core node using its JSO
   - Mempool transaction count, memory size and fee histogram
   - Next block template as well as expected tx count, weight, and fee rate bands
   - Fee estimates from Bitcoin Core for confirmation within 2, 3 and 6 blocks and one day
+  - The last five blocks with age, transactions, size, fees and mining pool
   - Scrollable list of the 100 largest transactions in the mempool sorted by BTC output
   - While the node is syncing: progress, blocks per second and estimated time to completion
 
@@ -82,6 +83,7 @@ If no user and password are configured, cookie authentication will be attempted.
 - System stats: CPU, memory, swap, uptime, load average
 - Mempool visualization: fee buckets with ASCII bars
 - Next block projection: approximate composition derived from `getblocktemplate` or mempool fees
+- Recent blocks: the last five blocks with height, age, transaction count, size, total fees and the mining pool read from the coinbase tag (best effort; unknown pools show their raw tag)
 - Fee estimates: `estimatesmartfee` for 2, 3 and 6 blocks and one day (144 blocks), in sat/vB; Bitcoin Core's shortest target is 2 blocks
 - Bitcoin price, block subsidy, # of blocks until next halving, time since last block
 - Scrollable list of the 100 largest transactions in the mempool sorted by BTC output
@@ -115,6 +117,8 @@ The tests run offline and do not require a Bitcoin Core node.
 | `rpc.py` | JSON-RPC client with cookie and password authentication |
 | `collector.py` | Polls the node on a background thread and assembles `DashboardData` |
 | `transactions.py` | Background lookups for the largest-transactions list |
+| `blocks.py` | Recent blocks and mining pool tags |
+| `sync.py` | Sync speed and time-left estimates during initial block download |
 | `price.py` | Cached BTC/USD price |
 | `fees.py`, `chain.py`, `formatting.py` | Pure calculations: fee buckets, next-block projection, subsidy and halving, text formatting |
 | `models.py` | Data classes passed from the collector to the panels |
