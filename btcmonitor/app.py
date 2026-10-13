@@ -23,6 +23,7 @@ from .panels import (
     get_top_transactions_panel,
     max_transaction_scroll,
 )
+from .price import PriceFeed
 from .rpc import BitcoinRPC
 
 TOP_ROW_HEIGHT = 7
@@ -125,9 +126,10 @@ class Dashboard:
             self.layout["bitcoin_info"].update(get_bitcoin_info_panel(data.bitcoin))
             self.layout["node"].update(get_node_panel(data.node, data.error))
             self.layout["mempool"].update(get_mempool_panel(data.mempool))
-            price = data.bitcoin.price_usd if data.bitcoin else None
+            price = data.bitcoin.price if data.bitcoin else None
+            currency = data.bitcoin.currency if data.bitcoin else None
             self.layout["top_transactions"].update(
-                get_top_transactions_panel(data.mempool, price, width, transactions_height, scroll_offset)
+                get_top_transactions_panel(data.mempool, price, width, transactions_height, scroll_offset, currency)
             )
             projection_height = height - TOP_ROW_HEIGHT - RECENT_BLOCKS_PANEL_HEIGHT
             self.layout["projection"].update(
@@ -158,5 +160,6 @@ class Dashboard:
             self.collector.stop()
 
 
-def run_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
-    Dashboard(Collector(rpc, interval=max(0.1, 1.0 / refresh_hz)), refresh_hz).run()
+def run_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0, price_feed: PriceFeed | None = None) -> None:
+    collector = Collector(rpc, interval=max(0.1, 1.0 / refresh_hz), price_feed=price_feed)
+    Dashboard(collector, refresh_hz).run()

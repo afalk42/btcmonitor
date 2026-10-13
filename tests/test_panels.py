@@ -98,6 +98,20 @@ class TopTransactionsPanelTests(unittest.TestCase):
     def test_fee_usd_column_hidden_on_narrow_terminals(self):
         self.assertNotIn("Fee US$", render(get_top_transactions_panel(mempool_view(3), 50000.0, terminal_width=113)))
 
+    def test_fiat_columns_follow_currency(self):
+        text = render(get_top_transactions_panel(mempool_view(1), 74507.0, 120, currency="eur"))
+        self.assertIn("EUR", text)
+        self.assertIn("Fee EUR", text)
+        self.assertIn("€7,450,700", text)
+        self.assertIn("€7.45", text)
+        self.assertNotIn("US$", text)
+
+    def test_no_fiat_columns_when_price_lookups_are_off(self):
+        text = render(get_top_transactions_panel(mempool_view(1), None, 120, currency=None))
+        self.assertNotIn("US$", text)
+        self.assertNotIn("N/A", text)
+        self.assertIn("sat/vB", text)
+
     def test_without_price_usd_shows_na(self):
         self.assertIn("N/A", render(get_top_transactions_panel(mempool_view(1), None)))
 
@@ -105,7 +119,7 @@ class TopTransactionsPanelTests(unittest.TestCase):
 class OtherPanelTests(unittest.TestCase):
     def test_bitcoin_info_time_since_last_block_ticks_at_render_time(self):
         info = BitcoinInfo(
-            price_usd=65000.0,
+            price=65000.0,
             current_subsidy=3.125,
             blocks_until_halving=1234,
             estimated_halving_date="2028-04-12",
@@ -115,6 +129,16 @@ class OtherPanelTests(unittest.TestCase):
         self.assertIn("$65,000", text)
         self.assertIn("1,234 blocks", text)
         self.assertIn("2:05", text)
+
+    def test_bitcoin_info_price_in_other_currencies(self):
+        def price_row(**kwargs):
+            info = BitcoinInfo(74507.0, 3.125, 1, None, None, **kwargs)
+            return [line for line in render(get_bitcoin_info_panel(info)).splitlines() if "Price" in line]
+
+        self.assertIn("€74,507", price_row(currency="eur")[0])
+        self.assertIn("74,507 SEK", price_row(currency="sek")[0])
+        self.assertIn("XYZ not supported", price_row(currency="xyz", price_unsupported=True)[0])
+        self.assertEqual(price_row(currency=None), [])  # price lookups off: no row at all
 
     def test_bitcoin_info_without_block_time(self):
         info = BitcoinInfo(None, 3.125, 1, None, None)

@@ -74,6 +74,12 @@ If no user and password are configured, cookie authentication will be attempted.
 
 `--network` accepts `mainnet`, `testnet` (alias `testnet3`), `testnet4`, `signet` and `regtest`. Unless `--rpc-port` is given, the network's standard RPC port is used (8332, 18332, 48332, 38332 and 18443 respectively).
 
+### Price and privacy
+
+The BTC price comes from the public [CoinGecko](https://www.coingecko.com/) API, queried about once a minute. That request reveals this machine's IP address to CoinGecko. To avoid it, run with `--no-price` (or set `BTCMONITOR_NO_PRICE=1`): no price request is made and the fiat columns are hidden.
+
+`--currency` (or `BTCMONITOR_CURRENCY`) selects the currency for the price and the transaction values, e.g. `--currency eur`. Any currency CoinGecko quotes works; an unsupported one is reported in the Bitcoin panel.
+
 ## Requirements
 - Python 3.11+ with pip and venv support
 - A running `bitcoind` with JSON-RPC enabled (default on loopback)

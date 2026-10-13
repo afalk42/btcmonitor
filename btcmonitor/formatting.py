@@ -47,3 +47,29 @@ def format_duration(seconds: float) -> str:
     if minutes:
         return f"{minutes}m {secs:02d}s"
     return f"{secs}s"
+
+
+# Symbols written before the amount; other currencies get their code after it ("1,234 SEK")
+CURRENCY_SYMBOLS = {
+    "usd": "$",
+    "eur": "€",
+    "gbp": "£",
+    "jpy": "¥",
+    "cny": "¥",
+    "inr": "₹",
+    "krw": "₩",
+    "brl": "R$",
+    "cad": "C$",
+    "aud": "A$",
+}
+
+
+def format_fiat(amount: float, currency: str, decimals: int = 0) -> str:
+    number = f"{amount:,.{decimals}f}"
+    symbol = CURRENCY_SYMBOLS.get(currency)
+    return f"{symbol}{number}" if symbol else f"{number} {currency.upper()}"
+
+
+def fiat_label(currency: str) -> str:
+    """Column heading for amounts in `currency`, e.g. "US$" or "EUR\""""
+    return "US$" if currency == "usd" else currency.upper()

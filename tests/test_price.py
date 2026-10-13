@@ -23,6 +23,25 @@ class PriceFeedTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
         self.urlopen = mock
 
+    def test_other_currency(self):
+        feed = PriceFeed("EUR", cache_seconds=60)
+        self.urlopen.return_value = io.BytesIO(b'{"bitcoin": {"eur": 74507}}')
+        self.assertEqual(feed.get(), 74507.0)
+        self.assertIn("vs_currencies=eur", self.urlopen.call_args.args[0])
+
+    def test_unsupported_currency_is_not_asked_again(self):
+        feed = PriceFeed("xyz", cache_seconds=60)
+        self.urlopen.return_value = io.BytesIO(b'{"bitcoin": {}}')
+        self.assertIsNone(feed.get())
+        self.assertTrue(feed.unsupported)
+        self.clock += 600
+        self.assertIsNone(feed.get())
+        self.assertEqual(self.urlopen.call_count, 1)
+
+    def test_disabled_feed_makes_no_requests(self):
+        self.assertIsNone(PriceFeed(enabled=False).get())
+        self.urlopen.assert_not_called()
+
     def test_price_is_cached_for_the_period(self):
         self.urlopen.return_value = response(65000)
         self.assertEqual(self.feed.get(), 65000.0)

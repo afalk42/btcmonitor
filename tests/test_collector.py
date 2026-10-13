@@ -30,7 +30,7 @@ class CollectorTestCase(unittest.TestCase):
         self.rpc.get_block.return_value = {"time": 1700000000}
         self.rpc.estimate_smart_fee.side_effect = lambda target: {"feerate": 0.0001 / target, "blocks": target}
         # Keep price HTTP requests and background transaction fetching offline.
-        self.price_feed = Mock(spec=PriceFeed)
+        self.price_feed = Mock(spec=PriceFeed, currency="usd", enabled=True, unsupported=False)
         self.price_feed.get.return_value = None
         self.tracker = Mock(spec=TransactionTracker)
         self.tracker.update.return_value = []
@@ -129,8 +129,14 @@ class SnapshotContentTests(CollectorTestCase):
         self.assertEqual((data.node.height, data.node.inbound_peers, data.node.outbound_peers), (840000, 1, 2))
         self.assertEqual(data.bitcoin.current_subsidy, 3.125)
         self.assertEqual(data.bitcoin.blocks_until_halving, 210000)
-        self.assertEqual(data.bitcoin.price_usd, 65000.0)
+        self.assertEqual((data.bitcoin.price, data.bitcoin.currency), (65000.0, "usd"))
         self.assertEqual(data.bitcoin.last_block_time, 1700000000)
+
+    def test_price_settings_are_passed_on(self):
+        self.price_feed.currency, self.price_feed.unsupported = "xyz", True
+        self.assertEqual((self.collect().bitcoin.currency, self.collect().bitcoin.price_unsupported), ("xyz", True))
+        self.price_feed.enabled = False
+        self.assertIsNone(self.collect().bitcoin.currency)
 
     def test_peer_info_failure_counts_all_peers_as_outbound(self):
         self.rpc.get_connection_count.return_value = 4
