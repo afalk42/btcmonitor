@@ -4,5 +4,5 @@ __all__ = [
     "discover_cookie_path",
 ]
 
+from .paths import discover_cookie_path, discover_default_datadir
 from .rpc import BitcoinRPC
-from .paths import discover_default_datadir, discover_cookie_path

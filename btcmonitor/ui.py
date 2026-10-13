@@ -1,24 +1,22 @@
 from __future__ import annotations
-import time
-import math
-import threading
-import sys
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
-import urllib.request
+
 import json
+import threading
+import time
+import urllib.request
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
 
 import psutil
 import readchar
+from rich.box import ROUNDED
 from rich.console import Console
+from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
-from rich.layout import Layout
-from rich.progress import BarColumn, Progress, TextColumn
 from rich.text import Text
-from rich.box import ROUNDED
 
 from .rpc import BitcoinRPC, RPCError
 
@@ -231,12 +229,13 @@ def build_fee_buckets(mempool: Dict[str, Dict]) -> List[Tuple[str, int]]:
     bands = [1, 2, 3, 5, 10, 20, 50, 100, 500, 1000]
     vbytes_per_band = [0 for _ in bands]
     for tx in mempool.values():
-        fee_sat = int(tx.get("fees", {}).get("base", 0) * 1e8)
+        # round() rather than int(): BTC floats like 0.00000059 * 1e8 come out just below the whole sat
+        fee_sat = round(tx.get("fees", {}).get("base", 0) * 1e8)
         vsize = tx.get("vsize") or tx.get("weight", 0) // 4
         fr = fee_sat / max(1, vsize)
-        # find band index
+        # find band index; a rate equal to a band's lower bound belongs to that band ("2+" includes 2)
         idx = 0
-        while idx < len(bands) - 1 and fr > bands[idx + 1]:
+        while idx < len(bands) - 1 and fr >= bands[idx + 1]:
             idx += 1
         vbytes_per_band[idx] += int(vsize)
     labels: List[Tuple[str, int]] = []
@@ -526,19 +525,23 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
             
             # Create Transaction objects from block template
             transactions = []
+            # Same shape as getrawmempool verbose entries, so build_fee_buckets can bucket the template
+            template_entries: Dict[str, Dict] = {}
             for i, tx in enumerate(txs):
                 vbytes = tx.get("weight", 0) // 4
                 fee_btc = tx.get("fee", 0) / 1e8
                 fee_rate = (fee_btc * 1e8) / max(1, vbytes)  # sat/vB
+                txid = tx.get("txid", f"tx_{i}")
                 
                 transactions.append(Transaction(
                     fee_rate=fee_rate,
                     vbytes=vbytes,
-                    txid=tx.get("txid", f"tx_{i}")
+                    txid=txid
                 ))
+                template_entries[txid] = {"vsize": vbytes, "fees": {"base": fee_btc}}
             
             total_vb = sum(tx.vbytes for tx in transactions)
-            proj_buckets = build_fee_buckets({t.txid: {"vsize": t.vbytes, "fees": {"base": t.fee_rate/1e8}} for t in transactions})
+            proj_buckets = build_fee_buckets(template_entries)
             proj = BlockProjection(
                 est_tx=len(transactions), 
                 est_weight_vbytes=total_vb, 
@@ -619,6 +622,9 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
         return snap, view, proj, bitcoin_info, None
     except RPCError as e:
         return None, None, None, None, str(e)
+    except Exception as e:
+        # Unexpected data from the node must not take down the dashboard; show it and keep polling
+        return None, None, None, None, f"Unexpected error: {type(e).__name__}: {e}"
 
 
 # Global flag for quit signal
@@ -635,149 +641,108 @@ _known_txids: set = set()  # Track which transactions we've seen before
 _last_block_height: int = 0  # Track block height to detect new blocks
 _initial_cache_loading: bool = False  # Track if initial cache loading is in progress
 _cache_loading_thread: Optional[threading.Thread] = None
+# Guards _transaction_data_cache, which the background loader writes while the UI thread reads it
+_cache_lock = threading.Lock()
 
 # Scroll state for transactions list
 _transaction_scroll_offset: int = 0  # Current scroll position
 
 def _load_transactions_background(rpc: BitcoinRPC, txids_to_process: List[str], mem_verbose: Dict[str, Dict]):
     """Background thread function to load transaction data"""
-    global _transaction_data_cache, _initial_cache_loading
-    
-    processed_count = 0
-    error_count = 0
-    
-    for txid in txids_to_process:
-        if txid not in mem_verbose:
-            continue
-            
-        tx_data = mem_verbose[txid]
-        fee_btc = tx_data.get("fees", {}).get("base", 0.0)
-        vbytes = tx_data.get("vsize", tx_data.get("weight", 0) // 4)
-        fee_rate = (fee_btc * 1e8) / max(1, vbytes) if vbytes > 0 else 0
-        
-        try:
-            # Get actual transaction details
-            tx_detail = rpc.get_raw_transaction(txid, True)
-            # Sum all output values to get total BTC amount
-            amount_btc = sum(float(vout.get("value", 0)) for vout in tx_detail.get("vout", []))
-            
+    global _initial_cache_loading
+
+    try:
+        for txid in txids_to_process:
+            if txid not in mem_verbose:
+                continue
+
+            tx_data = mem_verbose[txid]
+            fee_btc = tx_data.get("fees", {}).get("base", 0.0)
+            vbytes = tx_data.get("vsize", tx_data.get("weight", 0) // 4)
+            fee_rate = (fee_btc * 1e8) / max(1, vbytes) if vbytes > 0 else 0
+
+            try:
+                # Get actual transaction details
+                tx_detail = rpc.get_raw_transaction(txid, True)
+                # Sum all output values to get total BTC amount
+                amount_btc = sum(float(vout.get("value", 0)) for vout in tx_detail.get("vout", []))
+            except Exception:
+                # If lookup fails, continue with next transaction
+                continue
+
             if amount_btc > 0:
                 # Store in persistent cache
-                _transaction_data_cache[txid] = MempoolTransaction(
-                    txid=txid,
-                    amount_btc=amount_btc,
-                    fee_btc=fee_btc,
-                    fee_rate=fee_rate
-                )
-                processed_count += 1
-        except Exception as e:
-            error_count += 1
-            # If lookup fails, continue with next transaction
-            continue
-    
-    _initial_cache_loading = False
+                with _cache_lock:
+                    _transaction_data_cache[txid] = MempoolTransaction(
+                        txid=txid,
+                        amount_btc=amount_btc,
+                        fee_btc=fee_btc,
+                        fee_rate=fee_rate
+                    )
+    finally:
+        _initial_cache_loading = False
 
 
 def fetch_top_transactions(rpc: BitcoinRPC, mem_verbose: Dict[str, Dict], current_block_height: int = 0) -> List[MempoolTransaction]:
     """Fetch transaction data with smart incremental caching"""
-    global _transaction_cache, _last_transaction_fetch, _transaction_data_cache, _known_txids
+    global _transaction_cache, _last_transaction_fetch, _known_txids
     global _last_block_height, _initial_cache_loading, _cache_loading_thread
-    
+
     current_time = time.time()
     current_txids = set(mem_verbose.keys())
-    
+
     # Check if new block arrived - if so, clear cache of confirmed transactions
     if current_block_height > _last_block_height:
         # New block arrived! Remove all cached transactions that are no longer in mempool
         # This handles the case where transactions got confirmed into the new block
-        expired_txids = set(_transaction_data_cache.keys()) - current_txids
-        for txid in expired_txids:
-            _transaction_data_cache.pop(txid, None)
+        with _cache_lock:
+            expired_txids = set(_transaction_data_cache.keys()) - current_txids
+            for txid in expired_txids:
+                _transaction_data_cache.pop(txid, None)
         _last_block_height = current_block_height
-        
+
         # Force a cache refresh since the mempool composition changed significantly
         _last_transaction_fetch = 0
-    
-    # Check if this is the first run and we have no cached data
-    if not _transaction_data_cache and not _initial_cache_loading:
-        # Start background loading for initial cache population
-        _initial_cache_loading = True
-        max_to_process = min(20000, len(current_txids))
-        initial_txids = list(current_txids)[:max_to_process]
-        _known_txids = current_txids.copy()
-        
-        # Start background thread to load initial transaction data
-        _cache_loading_thread = threading.Thread(
-            target=_load_transactions_background,
-            args=(rpc, initial_txids, mem_verbose),
-            daemon=True
-        )
-        _cache_loading_thread.start()
-        
-        # Return empty list initially, will be populated by background thread
-        return []
-    
-    # Check if we need to update the cache (normal periodic update)
+
+    # Periodically look up transactions we haven't seen before (on first run, that is all of them)
     should_update = (current_time - _last_transaction_fetch) >= TRANSACTION_CACHE_DURATION
-    
+
     if should_update and not _initial_cache_loading:
-        # Find new transactions that we haven't seen before
-        new_txids = current_txids - _known_txids
-        
         # Remove transactions that are no longer in mempool from our cache
         expired_txids = _known_txids - current_txids
-        for txid in expired_txids:
-            _transaction_data_cache.pop(txid, None)
-        
-        # Update our known transaction set
-        _known_txids = current_txids.copy()
-        
-        # Process new transactions (much faster since we only do new ones)
+        with _cache_lock:
+            for txid in expired_txids:
+                _transaction_data_cache.pop(txid, None)
+        _known_txids &= current_txids
+
+        # Only transactions handed to the loader count as known, so none are skipped however large
+        # the mempool is. Lookups take a few milliseconds each, so they run in the background to
+        # keep the UI responsive.
+        new_txids = list(current_txids - _known_txids)
         if new_txids:
-            max_new_to_process = min(5000, len(new_txids))  # Smaller batch for incremental updates
-            new_txids_to_process = list(new_txids)[:max_new_to_process]
-            
-            # Process new transactions synchronously (should be fast)
-            for txid in new_txids_to_process:
-                if txid not in mem_verbose:
-                    continue
-                    
-                tx_data = mem_verbose[txid]
-                fee_btc = tx_data.get("fees", {}).get("base", 0.0)
-                vbytes = tx_data.get("vsize", tx_data.get("weight", 0) // 4)
-                fee_rate = (fee_btc * 1e8) / max(1, vbytes) if vbytes > 0 else 0
-                
-                try:
-                    # Get actual transaction details
-                    tx_detail = rpc.get_raw_transaction(txid, True)
-                    # Sum all output values to get total BTC amount
-                    amount_btc = sum(float(vout.get("value", 0)) for vout in tx_detail.get("vout", []))
-                    
-                    if amount_btc > 0:
-                        # Store in persistent cache
-                        _transaction_data_cache[txid] = MempoolTransaction(
-                            txid=txid,
-                            amount_btc=amount_btc,
-                            fee_btc=fee_btc,
-                            fee_rate=fee_rate
-                        )
-                except Exception:
-                    # If lookup fails, continue with next transaction
-                    continue
-        
+            _known_txids.update(new_txids)
+            _initial_cache_loading = True
+            _cache_loading_thread = threading.Thread(
+                target=_load_transactions_background,
+                args=(rpc, new_txids, mem_verbose),
+                daemon=True
+            )
+            _cache_loading_thread.start()
+
         _last_transaction_fetch = current_time
-    
+
     # Rebuild the sorted list from all cached data
     # Only include transactions that are still in the current mempool
-    valid_transactions = [
-        tx for txid, tx in _transaction_data_cache.items() 
-        if txid in current_txids
-    ]
-    
+    with _cache_lock:
+        valid_transactions = [
+            tx for txid, tx in _transaction_data_cache.items()
+            if txid in current_txids
+        ]
+
     # Sort by actual BTC output amount descending and take top 100
     valid_transactions.sort(key=lambda x: x.amount_btc, reverse=True)
     _transaction_cache = valid_transactions[:100]
-    
+
     return _transaction_cache
 
 
@@ -823,11 +788,7 @@ def keyboard_listener():
         pass
 
 
-def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
-    global _quit_requested
-    _quit_requested = False
-    
-    console = Console()
+def build_layout() -> Layout:
     layout = Layout()
     layout.split_column(
         Layout(name="top", size=7),
@@ -848,6 +809,35 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
         Layout(name="mempool", size=15),  # Fixed size for mempool (title + content + borders)
         Layout(name="top_transactions"),  # Takes remaining space
     )
+    return layout
+
+
+def update_layout(layout: Layout, rpc: BitcoinRPC, console: Console) -> None:
+    """Refresh every panel; an unexpected error is shown in the node panel instead of ending the program"""
+    try:
+        snap, mem_view, proj, bitcoin_info, err = gather_snapshot(rpc)
+        layout["sys"].update(get_system_panel())
+        layout["bitcoin_info"].update(get_bitcoin_info_panel(bitcoin_info))
+        layout["node"].update(get_node_panel(snap, err))
+        layout["mempool"].update(get_mempool_panel(mem_view))
+        # Pass terminal dimensions for dynamic column hiding and scrolling
+        terminal_width = console.size.width
+        terminal_height = console.size.height
+        # Calculate approximate height available for the transactions panel
+        # Account for: top panels (7 lines) + mempool panel (15 lines) only
+        transactions_panel_height = terminal_height - 7 - 15
+        layout["top_transactions"].update(get_top_transactions_panel(mem_view, bitcoin_info.price_usd if bitcoin_info else None, terminal_width, transactions_panel_height))
+        layout["projection"].update(get_projection_panel(proj, console))
+    except Exception as e:
+        layout["node"].update(get_node_panel(None, f"Unexpected error: {type(e).__name__}: {e}"))
+
+
+def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
+    global _quit_requested
+    _quit_requested = False
+
+    console = Console()
+    layout = build_layout()
 
     # Start keyboard listener thread
     keyboard_thread = threading.Thread(target=keyboard_listener, daemon=True)
@@ -858,20 +848,8 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
             # Check for quit signal
             if _quit_requested:
                 break
-                
-            snap, mem_view, proj, bitcoin_info, err = gather_snapshot(rpc)
-            layout["sys"].update(get_system_panel())
-            layout["bitcoin_info"].update(get_bitcoin_info_panel(bitcoin_info))
-            layout["node"].update(get_node_panel(snap, err))
-            layout["mempool"].update(get_mempool_panel(mem_view))
-            # Pass terminal dimensions for dynamic column hiding and scrolling
-            terminal_width = console.size.width
-            terminal_height = console.size.height
-            # Calculate approximate height available for the transactions panel
-            # Account for: top panels (7 lines) + mempool panel (15 lines) only
-            transactions_panel_height = terminal_height - 7 - 15
-            layout["top_transactions"].update(get_top_transactions_panel(mem_view, bitcoin_info.price_usd if bitcoin_info else None, terminal_width, transactions_panel_height))
-            layout["projection"].update(get_projection_panel(proj, console))
+
+            update_layout(layout, rpc, console)
             console.set_window_title("btcmonitor")
             live.update(layout, refresh=True)
             time.sleep(max(0.1, 1.0 / refresh_hz))

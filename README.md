@@ -3,7 +3,7 @@
 A terminal dashboard (TUI) that monitors a local Bitcoin Core node using its JSON-RPC interface.
 
 - Cross-platform using Python3 and [Rich](https://github.com/Textualize/rich): tested on macOS, Ubuntu, Windows
-- Uses cookie auth detection or `bitcoin.conf` as well as optional command-line parameters for rpc authentication
+- Reads RPC credentials from the auth cookie or `bitcoin.conf`, with optional command-line overrides
 - Visualizes the following data about your bitcoin node in a dashboard:
   - Node health, blockchain height, peer information
   - Bitcoin price, block subsidy, # of blocks until next halving, time since last block
@@ -65,7 +65,11 @@ By default it auto-discovers the datadir and cookie file for the default network
 btcmonitor --network mainnet --rpc-host 127.0.0.1 --rpc-port 8332 --rpc-user user --rpc-password pass
 ```
 
-If `--rpc-user`/`--rpc-password` are omitted, cookie authentication will be attempted.
+Settings are resolved in this order: command-line options (or the `BITCOIN_*` environment variables), then `bitcoin.conf`, then defaults. From `bitcoin.conf` btcmonitor reads `rpcuser`, `rpcpassword`, `rpcport`, `rpccookiefile` and `datadir`, honoring network sections such as `[signet]`. It looks for `bitcoin.conf` in the data directory; use `--conf` to point elsewhere.
+
+If no user and password are configured, cookie authentication will be attempted. If your node uses a non-default data directory, pass it with `--datadir` (or `BITCOIN_DATADIR`) so the cookie can be found.
+
+`--network` accepts `mainnet`, `testnet` (alias `testnet3`), `testnet4`, `signet` and `regtest`. Unless `--rpc-port` is given, the network's standard RPC port is used (8332, 18332, 48332, 38332 and 18443 respectively).
 
 ## Requirements
 - Python 3.9+ with pip and venv support
@@ -82,12 +86,14 @@ If `--rpc-user`/`--rpc-password` are omitted, cookie authentication will be atte
 ## Quit
 - Press `q` or `Ctrl+C`
 
-## Tests
+## Tests and linting
 
-After installing the project in your virtual environment, run:
+After installing the project with its development extras in your virtual environment, run:
 
 ```bash
+pip install -e ".[dev]"
 python -m unittest discover -v
+ruff check .
 ```
 
-The tests run offline and do not require a Bitcoin Core node.
+The tests run offline and do not require a Bitcoin Core node. GitHub Actions runs the same checks on every push and pull request.

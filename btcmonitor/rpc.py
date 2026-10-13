@@ -1,7 +1,7 @@
 from __future__ import annotations
+
 import base64
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -23,55 +23,71 @@ class RPCConfig:
     password: Optional[str] = None
     network: str = "mainnet"
     timeout: float = 5.0
+    datadir: Optional[Path] = None
+    cookie_file: Optional[Path] = None  # rpccookiefile from bitcoin.conf; overrides the datadir's .cookie
 
 
 class BitcoinRPC:
     def __init__(self, config: RPCConfig):
         self.config = config
         self._url = f"http://{config.host}:{config.port}"
+        self._cookie_path: Optional[Path] = None
         self._auth_header = self._build_auth_header()
-        self._auth_source: str = "basic" if (config.user and config.password) else "cookie"
-        self._cookie_path: Optional[Path] = discover_cookie_path(self.config.network)
+
+    def _find_cookie(self) -> Optional[Path]:
+        if self.config.cookie_file is not None:
+            return self.config.cookie_file if self.config.cookie_file.exists() else None
+        return discover_cookie_path(self.config.network, self.config.datadir)
+
+    def _read_cookie_header(self) -> Dict[str, str]:
+        """Auth header from the current cookie file, or {} if there is none"""
+        self._cookie_path = self._find_cookie()
+        if not self._cookie_path:
+            return {}
+        try:
+            # Format is: user:token in one line
+            content = self._cookie_path.read_text().strip()
+        except OSError:
+            return {}
+        token = base64.b64encode(content.encode()).decode()
+        return {"Authorization": f"Basic {token}"}
 
     def _build_auth_header(self) -> Dict[str, str]:
         if self.config.user and self.config.password:
             token = base64.b64encode(f"{self.config.user}:{self.config.password}".encode()).decode()
             return {"Authorization": f"Basic {token}"}
-        # cookie auth
-        cookie_path = discover_cookie_path(self.config.network)
-        if cookie_path and cookie_path.exists():
-            # Format is: user:token in one line
-            content = Path(cookie_path).read_text().strip()
-            token = base64.b64encode(content.encode()).decode()
-            return {"Authorization": f"Basic {token}"}
-        return {}
+        return self._read_cookie_header()
+
+    def _post(self, payload: Dict[str, Any], auth_header: Dict[str, str]) -> requests.Response:
+        try:
+            return requests.post(self._url, headers={"Content-Type": "application/json", **auth_header},
+                                 data=json.dumps(payload), timeout=self.config.timeout)
+        except requests.RequestException as e:
+            raise RPCError(str(e)) from e
 
     def call(self, method: str, *params: Any) -> Any:
         payload = {"jsonrpc": "2.0", "id": "btcmonitor", "method": method, "params": list(params)}
-        try:
-            resp = requests.post(self._url, headers={"Content-Type": "application/json", **self._auth_header}, data=json.dumps(payload), timeout=self.config.timeout)
-        except requests.RequestException as e:
-            raise RPCError(str(e))
-        # If unauthorized with basic, retry once with cookie (if present)
-        if resp.status_code == 401 and self._auth_source == "basic":
-            cookie_path = self._cookie_path or discover_cookie_path(self.config.network)
-            if cookie_path and cookie_path.exists():
-                content = Path(cookie_path).read_text().strip()
-                token = base64.b64encode(content.encode()).decode()
-                retry_header = {"Content-Type": "application/json", "Authorization": f"Basic {token}"}
-                try:
-                    resp = requests.post(self._url, headers=retry_header, data=json.dumps(payload), timeout=self.config.timeout)
-                    self._auth_header = {"Authorization": f"Basic {token}"}
-                    self._auth_source = "cookie"
-                except requests.RequestException as e:
-                    raise RPCError(str(e))
+        resp = self._post(payload, self._auth_header)
+        if resp.status_code == 401:
+            # bitcoind writes a new cookie each time it starts, and it may not have existed when we
+            # started, so re-read it and retry once (also the fallback when user/password are rejected)
+            cookie_header = self._read_cookie_header()
+            if cookie_header and cookie_header != self._auth_header:
+                resp = self._post(payload, cookie_header)
+                if resp.status_code != 401:
+                    self._auth_header = cookie_header
         if resp.status_code == 401:
             target = f"http://{self.config.host}:{self.config.port}"
             cookie_note = f" cookie at {self._cookie_path}" if (self._cookie_path and self._cookie_path.exists()) else " cookie (not found)"
             raise RPCError(f"Unauthorized to {target}: check rpcuser/rpcpassword or rpcauth, or{cookie_note} for this network ({self.config.network}).")
         if resp.status_code >= 400:
             raise RPCError(f"HTTP {resp.status_code}: {resp.text}")
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError as e:
+            raise RPCError(f"Invalid JSON from {self._url}: {resp.text[:200]!r}") from e
+        if not isinstance(data, dict):
+            raise RPCError(f"Unexpected JSON-RPC response from {self._url}: {str(data)[:200]}")
         if data.get("error"):
             raise RPCError(str(data["error"]))
         return data.get("result")

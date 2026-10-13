@@ -26,3 +26,14 @@ include = ["btcmonitor*"]
 
 [tool.setuptools]
 zip-safe = false
+
+[project.optional-dependencies]
+dev = ["ruff==0.17.0"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+
+[tool.ruff.lint]
+# pycodestyle errors, pyflakes, bugbear, import sorting
+select = ["E4", "E7", "E9", "F", "B", "I"]
