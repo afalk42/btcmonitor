@@ -20,10 +20,10 @@ A terminal dashboard (TUI) that monitors a local Bitcoin Core node using its JSO
 The following are needed for a successful installation:
 
 - Python 3.9+
-- PIP Python Package Mangager
+- PIP Python Package Manager
 - Python3 virtual environments support
 
-If you don't have them already available, you can used these commands on Linux to install the prerequisites:
+If you don't have them already available, you can use these commands on Linux to install the prerequisites:
 
 ```bash
 sudo apt install python3 python3-pip python3-venv
@@ -31,9 +31,9 @@ sudo apt install python3 python3-pip python3-venv
 
 ### Installation
 
-#### On MacOS and Ubuntu/Linux
+#### On macOS and Ubuntu/Linux
 
-On both MacOS and Ubunut using pip in Python3 requires the use of a venv virtual environment.
+On both macOS and Ubuntu using pip in Python3 requires the use of a venv virtual environment.
 
 ```bash
 git clone https://github.com/afalk42/btcmonitor
@@ -76,15 +76,19 @@ If no user and password are configured, cookie authentication will be attempted.
 - A running `bitcoind` with JSON-RPC enabled (default on loopback)
 
 ## Features
-- Node summary: block height, headers, verification progress, peers, mempool bytes/txs, uptime
-- System stats: CPU, memory, I/O
+- Node summary: block height, headers, verification progress, peers, mempool bytes/txs, difficulty
+- System stats: CPU, memory, swap, uptime, load average
 - Mempool visualization: fee buckets with ASCII bars
 - Next block projection: approximate composition derived from `getblocktemplate` or mempool fees
 - Bitcoin price, block subsidy, # of blocks until next halving, time since last block
 - Scrollable list of the 100 largest transactions in the mempool sorted by BTC output
 
-## Quit
-- Press `q` or `Ctrl+C`
+## Keys
+- `↑`/`↓`, `PgUp`/`PgDn`, `Home`/`End`: scroll the largest-transactions list
+- `q` or `Ctrl+C`: quit
+
+## Refresh rate
+`--refresh` sets how often the display redraws and the node is polled (default 2 Hz). The mempool histogram and the next-block projection, which require fetching the whole mempool and a block template, are refreshed every 5 seconds and whenever a new block arrives. The largest-transactions list looks up new mempool transactions in the background about once a minute.
 
 ## Tests and linting
 
@@ -94,6 +98,20 @@ After installing the project with its development extras in your virtual environ
 pip install -e ".[dev]"
 python -m unittest discover -v
 ruff check .
+ruff format --check .
 ```
 
-The tests run offline and do not require a Bitcoin Core node. GitHub Actions runs the same checks on every push and pull request.
+The tests run offline and do not require a Bitcoin Core node.
+
+## Project layout
+
+| Module | Purpose |
+| --- | --- |
+| `__main__.py`, `conf.py`, `paths.py` | Command line, `bitcoin.conf` and data directory discovery |
+| `rpc.py` | JSON-RPC client with cookie and password authentication |
+| `collector.py` | Polls the node on a background thread and assembles `DashboardData` |
+| `transactions.py` | Background lookups for the largest-transactions list |
+| `price.py` | Cached BTC/USD price |
+| `fees.py`, `chain.py`, `formatting.py` | Pure calculations: fee buckets, next-block projection, subsidy and halving, text formatting |
+| `models.py` | Data classes passed from the collector to the panels |
+| `panels.py`, `app.py`, `keyboard.py` | Rendering, layout, render loop and keyboard input | GitHub Actions runs the same checks on every push and pull request.

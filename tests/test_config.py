@@ -13,8 +13,10 @@ from btcmonitor.rpc import BitcoinRPC
 
 def config_for(*argv, env=None, base_datadir=Path("/nonexistent/btcmonitor-test")):
     # Point the default data directory away from any real ~/.bitcoin so tests are hermetic
-    with patch.dict(os.environ, env or {}, clear=True), \
-            patch("btcmonitor.__main__.default_base_datadir", return_value=base_datadir):
+    with (
+        patch.dict(os.environ, env or {}, clear=True),
+        patch("btcmonitor.__main__.default_base_datadir", return_value=base_datadir),
+    ):
         return build_config(parse_args(list(argv)))
 
 
@@ -39,12 +41,13 @@ class NetworkDefaultsTests(unittest.TestCase):
         self.assertEqual(config_for("--network", "regtest", env={"BITCOIN_RPC_PORT": "9998"}).port, 9998)
 
     def test_testnet4_uses_its_own_datadir(self):
-        with patch("btcmonitor.paths.Path.home", return_value=Path("/home/u")), \
-                patch("btcmonitor.paths.sys.platform", "linux"):
+        with (
+            patch("btcmonitor.paths.Path.home", return_value=Path("/home/u")),
+            patch("btcmonitor.paths.sys.platform", "linux"),
+        ):
             self.assertEqual(discover_default_datadir("testnet4"), Path("/home/u/.bitcoin/testnet4"))
             self.assertEqual(discover_default_datadir("testnet3"), Path("/home/u/.bitcoin/testnet3"))
             self.assertEqual(discover_default_datadir("mainnet"), Path("/home/u/.bitcoin"))
-
 
 
 class DatadirTests(unittest.TestCase):
@@ -78,7 +81,6 @@ class DatadirTests(unittest.TestCase):
         self.assertEqual(config.datadir, self.datadir)
 
 
-
 class BitcoinConfTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -102,9 +104,13 @@ class BitcoinConfTests(unittest.TestCase):
             "rpcport=2222\n"
             "rpcuser=bob\n"
         )
-        self.assertEqual(read_bitcoin_conf(path, "mainnet"), {"rpcuser": "alice", "rpcpassword": "pw1", "rpcport": "1111"})
+        self.assertEqual(
+            read_bitcoin_conf(path, "mainnet"), {"rpcuser": "alice", "rpcpassword": "pw1", "rpcport": "1111"}
+        )
         # Top-level rpcport is mainnet-only; section values win over top-level ones
-        self.assertEqual(read_bitcoin_conf(path, "regtest"), {"rpcuser": "bob", "rpcpassword": "pw1", "rpcport": "2222"})
+        self.assertEqual(
+            read_bitcoin_conf(path, "regtest"), {"rpcuser": "bob", "rpcpassword": "pw1", "rpcport": "2222"}
+        )
         self.assertEqual(read_bitcoin_conf(path, "signet")["rpcport"], "3333")
         self.assertNotIn("rpcport", read_bitcoin_conf(path, "testnet4"))
 
@@ -118,8 +124,7 @@ class BitcoinConfTests(unittest.TestCase):
 
     def test_command_line_wins_over_conf(self):
         self.write_conf("rpcuser=alice\nrpcpassword=secret\nrpcport=8999\n")
-        config = config_for("--rpc-user", "carol", "--rpc-password", "pw", "--rpc-port", "7000",
-                            base_datadir=self.base)
+        config = config_for("--rpc-user", "carol", "--rpc-password", "pw", "--rpc-port", "7000", base_datadir=self.base)
         self.assertEqual((config.user, config.password, config.port), ("carol", "pw", 7000))
 
     def test_explicit_conf_path(self):
