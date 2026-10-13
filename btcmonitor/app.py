@@ -17,6 +17,7 @@ from .panels import (
     get_mempool_panel,
     get_node_panel,
     get_projection_panel,
+    get_sync_panel,
     get_system_panel,
     get_top_transactions_panel,
     max_transaction_scroll,
@@ -29,7 +30,12 @@ MEMPOOL_PANEL_HEIGHT = 15  # title + histogram + borders
 
 def build_layout() -> Layout:
     layout = Layout()
-    layout.split_column(Layout(name="top", size=TOP_ROW_HEIGHT), Layout(name="bottom"))
+    layout.split_column(
+        Layout(name="top", size=TOP_ROW_HEIGHT),
+        Layout(name="bottom"),
+        # Replaces "bottom" during initial block download, when the mempool panels have nothing to show
+        Layout(name="sync", visible=False),
+    )
     layout["top"].split_row(
         Layout(name="sys"),
         Layout(name="bitcoin_info"),
@@ -118,6 +124,12 @@ class Dashboard:
                 get_top_transactions_panel(data.mempool, price, width, transactions_height, scroll_offset)
             )
             self.layout["projection"].update(get_projection_panel(data.projection, width, height))
+
+            syncing = data.sync is not None
+            self.layout["bottom"].visible = not syncing
+            self.layout["sync"].visible = syncing
+            if syncing:
+                self.layout["sync"].update(get_sync_panel(data.sync, width))
         except Exception as e:
             self.layout["node"].update(get_node_panel(None, f"Unexpected error: {type(e).__name__}: {e}"))
 

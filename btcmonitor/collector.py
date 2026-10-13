@@ -7,9 +7,10 @@ import time
 
 from .chain import calculate_halving_info, get_current_subsidy
 from .fees import build_fee_buckets, project_block_from_buckets, project_block_from_template
-from .models import BitcoinInfo, BlockProjection, DashboardData, FeeBuckets, MempoolView, NodeSnapshot
+from .models import BitcoinInfo, BlockProjection, DashboardData, FeeBuckets, MempoolView, NodeSnapshot, SyncProgress
 from .price import PriceFeed
 from .rpc import BitcoinRPC, RPCError
+from .sync import SyncRate
 from .transactions import TransactionTracker
 
 
@@ -34,6 +35,7 @@ class Collector:
         self.mempool_seconds = mempool_seconds
         self.price_feed = price_feed or PriceFeed()
         self.tracker = tracker or TransactionTracker(rpc)
+        self.sync_rate = SyncRate()
         # Replaced wholesale after each cycle; readers on other threads just take the reference
         self.latest = DashboardData()
 
@@ -94,9 +96,11 @@ class Collector:
             mempool_bytes=int(mi.get("bytes", 0)),
             mempool_tx=int(mi.get("size", 0)),
             difficulty=float(bi.get("difficulty", 0.0)),
+            initial_block_download=bool(bi.get("initialblockdownload", False)),
         )
 
         now = time.monotonic()
+        self.sync_rate.add(now, height, node.verification_progress)
         if (
             self._mempool_fetched_at is None
             or now - self._mempool_fetched_at >= self.mempool_seconds
@@ -122,7 +126,19 @@ class Collector:
             estimated_halving_date=halving_date,
             last_block_time=self._last_block_time(bi),
         )
-        return DashboardData(node=node, mempool=mempool, projection=self._projection, bitcoin=bitcoin)
+        sync = None
+        if node.initial_block_download:
+            sync = SyncProgress(
+                height=height,
+                headers=node.headers,
+                verification_progress=node.verification_progress,
+                blocks_per_second=self.sync_rate.blocks_per_second,
+                eta_seconds=self.sync_rate.eta_seconds,
+                tip_time=bi.get("time") or bitcoin.last_block_time,
+                size_on_disk=bi.get("size_on_disk"),
+                pruned=bool(bi.get("pruned", False)),
+            )
+        return DashboardData(node=node, mempool=mempool, projection=self._projection, bitcoin=bitcoin, sync=sync)
 
     def _refresh_mempool(self, height: int) -> None:
         self._mempool = self.rpc.get_raw_mempool(True)

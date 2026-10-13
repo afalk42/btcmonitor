@@ -171,6 +171,42 @@ class PollingCostTests(CollectorTestCase):
         self.assertEqual(self.rpc.get_best_block_hash.call_count, 2)
 
 
+class InitialBlockDownloadTests(CollectorTestCase):
+    def test_no_sync_data_once_caught_up(self):
+        self.rpc.get_blockchain_info.return_value = {"blocks": 100, "headers": 100, "initialblockdownload": False}
+        data = self.collect()
+        self.assertIsNone(data.sync)
+        self.assertFalse(data.node.initial_block_download)
+
+    def test_sync_progress_and_rates_during_ibd(self):
+        info = {
+            "blocks": 100_000,
+            "headers": 900_000,
+            "verificationprogress": 0.2,
+            "initialblockdownload": True,
+            "time": 1300000000,
+            "size_on_disk": 5_000_000_000,
+            "pruned": True,
+        }
+        self.rpc.get_blockchain_info.return_value = info
+        with patch("btcmonitor.collector.time.monotonic", return_value=1000.0):
+            first = self.collect().sync
+        self.assertEqual(
+            (first.height, first.headers, first.tip_time, first.pruned), (100_000, 900_000, 1300000000, True)
+        )
+        self.assertIsNone(first.blocks_per_second)  # needs two samples
+
+        self.rpc.get_blockchain_info.return_value = dict(info, blocks=101_000, verificationprogress=0.21)
+        with patch("btcmonitor.collector.time.monotonic", return_value=1010.0):
+            sync = self.collect().sync
+        self.assertEqual(sync.blocks_per_second, 100.0)
+        self.assertAlmostEqual(sync.eta_seconds, 790.0)  # 0.79 left at 0.001 per second
+
+    def test_tip_time_falls_back_to_best_block_header(self):
+        self.rpc.get_blockchain_info.return_value = {"blocks": 5, "headers": 10, "initialblockdownload": True}
+        self.assertEqual(self.collect().sync.tip_time, 1700000000)
+
+
 class UnexpectedErrorTests(CollectorTestCase):
     def test_rpc_error_is_reported(self):
         self.rpc.get_blockchain_info.side_effect = RPCError("connection refused")

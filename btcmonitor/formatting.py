@@ -17,7 +17,24 @@ def format_txid(txid: str) -> str:
 
 
 def format_time_since_block(seconds: int) -> str:
-    """Format seconds into minutes:seconds format"""
+    """Format seconds as minutes:seconds, or as a duration from an hour up (e.g. during initial sync)"""
+    if seconds >= 3600:
+        return format_duration(seconds)
     minutes = seconds // 60
     remaining_seconds = seconds % 60
     return f"{minutes}:{remaining_seconds:02d}"
+
+
+def format_duration(seconds: float) -> str:
+    """Rough human duration with the two largest units, e.g. "2d 3h", "4h 05m", "12m 30s", "45s\""""
+    seconds = int(seconds)
+    days, rest = divmod(seconds, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes, secs = divmod(rest, 60)
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes:02d}m"
+    if minutes:
+        return f"{minutes}m {secs:02d}s"
+    return f"{secs}s"
