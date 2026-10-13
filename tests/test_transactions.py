@@ -1,7 +1,7 @@
 import sys
 import time
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from btcmonitor import ui
 from btcmonitor.rpc import BitcoinRPC
@@ -51,6 +51,31 @@ class TransactionCacheTests(unittest.TestCase):
             ui.fetch_top_transactions(rpc, mempool, 1)
         self.wait_for_background_load()
         self.assertEqual(len(ui.fetch_top_transactions(rpc, mempool, 1)), 100)
+
+
+    def test_every_transaction_in_a_large_mempool_is_looked_up(self):
+        # More transactions than the old 20,000 initial-load cap, which silently skipped the rest
+        rpc = fake_rpc()
+        mempool = mempool_of(30000)
+        with patch.object(ui, "TRANSACTION_CACHE_DURATION", 0):
+            ui.fetch_top_transactions(rpc, mempool, 1)
+            self.wait_for_background_load()
+            ui.fetch_top_transactions(rpc, mempool, 1)
+            self.wait_for_background_load()
+            top = ui.fetch_top_transactions(rpc, mempool, 1)
+        self.assertEqual(rpc.get_raw_transaction.call_count, 30000)
+        self.assertEqual(top[0].txid, "tx29999")
+
+    def test_transactions_arriving_later_are_looked_up_once(self):
+        rpc = fake_rpc()
+        with patch.object(ui, "TRANSACTION_CACHE_DURATION", 0):
+            ui.fetch_top_transactions(rpc, mempool_of(10), 1)
+            self.wait_for_background_load()
+            ui.fetch_top_transactions(rpc, mempool_of(15), 1)
+            self.wait_for_background_load()
+            top = ui.fetch_top_transactions(rpc, mempool_of(15), 1)
+        self.assertEqual(rpc.get_raw_transaction.call_count, 15)
+        self.assertEqual([tx.txid for tx in top[:2]], ["tx14", "tx13"])
 
 
 if __name__ == "__main__":

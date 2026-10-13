@@ -646,26 +646,27 @@ _transaction_scroll_offset: int = 0  # Current scroll position
 
 def _load_transactions_background(rpc: BitcoinRPC, txids_to_process: List[str], mem_verbose: Dict[str, Dict]):
     """Background thread function to load transaction data"""
-    global _transaction_data_cache, _initial_cache_loading
-    
-    processed_count = 0
-    error_count = 0
-    
-    for txid in txids_to_process:
-        if txid not in mem_verbose:
-            continue
-            
-        tx_data = mem_verbose[txid]
-        fee_btc = tx_data.get("fees", {}).get("base", 0.0)
-        vbytes = tx_data.get("vsize", tx_data.get("weight", 0) // 4)
-        fee_rate = (fee_btc * 1e8) / max(1, vbytes) if vbytes > 0 else 0
-        
-        try:
-            # Get actual transaction details
-            tx_detail = rpc.get_raw_transaction(txid, True)
-            # Sum all output values to get total BTC amount
-            amount_btc = sum(float(vout.get("value", 0)) for vout in tx_detail.get("vout", []))
-            
+    global _initial_cache_loading
+
+    try:
+        for txid in txids_to_process:
+            if txid not in mem_verbose:
+                continue
+
+            tx_data = mem_verbose[txid]
+            fee_btc = tx_data.get("fees", {}).get("base", 0.0)
+            vbytes = tx_data.get("vsize", tx_data.get("weight", 0) // 4)
+            fee_rate = (fee_btc * 1e8) / max(1, vbytes) if vbytes > 0 else 0
+
+            try:
+                # Get actual transaction details
+                tx_detail = rpc.get_raw_transaction(txid, True)
+                # Sum all output values to get total BTC amount
+                amount_btc = sum(float(vout.get("value", 0)) for vout in tx_detail.get("vout", []))
+            except Exception:
+                # If lookup fails, continue with next transaction
+                continue
+
             if amount_btc > 0:
                 # Store in persistent cache
                 with _cache_lock:
@@ -675,23 +676,18 @@ def _load_transactions_background(rpc: BitcoinRPC, txids_to_process: List[str], 
                         fee_btc=fee_btc,
                         fee_rate=fee_rate
                     )
-                processed_count += 1
-        except Exception:
-            error_count += 1
-            # If lookup fails, continue with next transaction
-            continue
-    
-    _initial_cache_loading = False
+    finally:
+        _initial_cache_loading = False
 
 
 def fetch_top_transactions(rpc: BitcoinRPC, mem_verbose: Dict[str, Dict], current_block_height: int = 0) -> List[MempoolTransaction]:
     """Fetch transaction data with smart incremental caching"""
-    global _transaction_cache, _last_transaction_fetch, _transaction_data_cache, _known_txids
+    global _transaction_cache, _last_transaction_fetch, _known_txids
     global _last_block_height, _initial_cache_loading, _cache_loading_thread
-    
+
     current_time = time.time()
     current_txids = set(mem_verbose.keys())
-    
+
     # Check if new block arrived - if so, clear cache of confirmed transactions
     if current_block_height > _last_block_height:
         # New block arrived! Remove all cached transactions that are no longer in mempool
@@ -701,81 +697,37 @@ def fetch_top_transactions(rpc: BitcoinRPC, mem_verbose: Dict[str, Dict], curren
             for txid in expired_txids:
                 _transaction_data_cache.pop(txid, None)
         _last_block_height = current_block_height
-        
+
         # Force a cache refresh since the mempool composition changed significantly
         _last_transaction_fetch = 0
-    
-    # Check if this is the first run and we have no cached data
-    if not _transaction_data_cache and not _initial_cache_loading:
-        # Start background loading for initial cache population
-        _initial_cache_loading = True
-        max_to_process = min(20000, len(current_txids))
-        initial_txids = list(current_txids)[:max_to_process]
-        _known_txids = current_txids.copy()
-        
-        # Start background thread to load initial transaction data
-        _cache_loading_thread = threading.Thread(
-            target=_load_transactions_background,
-            args=(rpc, initial_txids, mem_verbose),
-            daemon=True
-        )
-        _cache_loading_thread.start()
-        
-        # Return empty list initially, will be populated by background thread
-        return []
-    
-    # Check if we need to update the cache (normal periodic update)
+
+    # Periodically look up transactions we haven't seen before (on first run, that is all of them)
     should_update = (current_time - _last_transaction_fetch) >= TRANSACTION_CACHE_DURATION
-    
+
     if should_update and not _initial_cache_loading:
-        # Find new transactions that we haven't seen before
-        new_txids = current_txids - _known_txids
-        
         # Remove transactions that are no longer in mempool from our cache
         expired_txids = _known_txids - current_txids
         with _cache_lock:
             for txid in expired_txids:
                 _transaction_data_cache.pop(txid, None)
-        
-        # Update our known transaction set
-        _known_txids = current_txids.copy()
-        
-        # Process new transactions (much faster since we only do new ones)
+        _known_txids &= current_txids
+
+        # Only transactions handed to the loader count as known, so none are skipped however large
+        # the mempool is. Lookups take a few milliseconds each, so they run in the background to
+        # keep the UI responsive.
+        new_txids = list(current_txids - _known_txids)
         if new_txids:
-            max_new_to_process = min(5000, len(new_txids))  # Smaller batch for incremental updates
-            new_txids_to_process = list(new_txids)[:max_new_to_process]
-            
-            # Process new transactions synchronously (should be fast)
-            for txid in new_txids_to_process:
-                if txid not in mem_verbose:
-                    continue
-                    
-                tx_data = mem_verbose[txid]
-                fee_btc = tx_data.get("fees", {}).get("base", 0.0)
-                vbytes = tx_data.get("vsize", tx_data.get("weight", 0) // 4)
-                fee_rate = (fee_btc * 1e8) / max(1, vbytes) if vbytes > 0 else 0
-                
-                try:
-                    # Get actual transaction details
-                    tx_detail = rpc.get_raw_transaction(txid, True)
-                    # Sum all output values to get total BTC amount
-                    amount_btc = sum(float(vout.get("value", 0)) for vout in tx_detail.get("vout", []))
-                    
-                    if amount_btc > 0:
-                        # Store in persistent cache
-                        with _cache_lock:
-                            _transaction_data_cache[txid] = MempoolTransaction(
-                                txid=txid,
-                                amount_btc=amount_btc,
-                                fee_btc=fee_btc,
-                                fee_rate=fee_rate
-                            )
-                except Exception:
-                    # If lookup fails, continue with next transaction
-                    continue
-        
+            _known_txids.update(new_txids)
+            _initial_cache_loading = True
+            _cache_loading_thread = threading.Thread(
+                target=_load_transactions_background,
+                args=(rpc, new_txids, mem_verbose),
+                daemon=True
+            )
+            _cache_loading_thread.start()
+
         _last_transaction_fetch = current_time
-    
+
     # Rebuild the sorted list from all cached data
     # Only include transactions that are still in the current mempool
     with _cache_lock:
@@ -783,11 +735,11 @@ def fetch_top_transactions(rpc: BitcoinRPC, mem_verbose: Dict[str, Dict], curren
             tx for txid, tx in _transaction_data_cache.items()
             if txid in current_txids
         ]
-    
+
     # Sort by actual BTC output amount descending and take top 100
     valid_transactions.sort(key=lambda x: x.amount_btc, reverse=True)
     _transaction_cache = valid_transactions[:100]
-    
+
     return _transaction_cache
 
 
