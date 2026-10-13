@@ -67,6 +67,8 @@ btcmonitor --network mainnet --rpc-host 127.0.0.1 --rpc-port 8332 --rpc-user use
 
 If `--rpc-user`/`--rpc-password` are omitted, cookie authentication will be attempted.
 
+`--network` accepts `mainnet`, `testnet` (alias `testnet3`), `testnet4`, `signet` and `regtest`. Unless `--rpc-port` is given, the network's standard RPC port is used (8332, 18332, 48332, 38332 and 18443 respectively).
+
 ## Requirements
 - Python 3.9+ with pip and venv support
 - A running `bitcoind` with JSON-RPC enabled (default on loopback)
