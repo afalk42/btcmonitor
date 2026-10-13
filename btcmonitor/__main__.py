@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import os
 import re
 from pathlib import Path
@@ -10,6 +11,13 @@ from .conf import read_bitcoin_conf
 from .paths import DEFAULT_RPC_PORTS, default_base_datadir, discover_default_datadir
 from .price import PriceFeed
 from .rpc import BitcoinRPC, RPCConfig
+
+
+def package_version() -> str:
+    try:
+        return importlib.metadata.version("btcmonitor")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown (not installed)"
 
 
 def currency_code(value: str) -> str:
@@ -24,6 +32,7 @@ def parse_args(argv=None):
         prog="btcmonitor",
         description="Terminal Bitcoin Core monitor. Use arrow keys to scroll transactions. Press 'q' to quit or use Ctrl-C.",
     )
+    p.add_argument("--version", action="version", version=f"%(prog)s {package_version()}")
     p.add_argument("--rpc-host", default=os.getenv("BITCOIN_RPC_HOST", "127.0.0.1"))
     env_port = os.getenv("BITCOIN_RPC_PORT")
     p.add_argument(
