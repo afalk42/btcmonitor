@@ -26,6 +26,7 @@ class CollectorTestCase(unittest.TestCase):
         )
         self.rpc.get_best_block_hash.return_value = "best"
         self.rpc.get_block.return_value = {"time": 1700000000}
+        self.rpc.estimate_smart_fee.side_effect = lambda target: {"feerate": 0.0001 / target, "blocks": target}
         # Keep price HTTP requests and background transaction fetching offline.
         self.price_feed = Mock(spec=PriceFeed)
         self.price_feed.get.return_value = None
@@ -169,6 +170,29 @@ class PollingCostTests(CollectorTestCase):
         self.assertEqual(self.rpc.get_block.call_count, 2)
         # getbestblockhash is only a fallback when getblockchaininfo lacks bestblockhash
         self.assertEqual(self.rpc.get_best_block_hash.call_count, 2)
+
+
+class FeeEstimateTests(CollectorTestCase):
+    def test_estimates_for_each_target_in_sat_per_vbyte(self):
+        estimates = self.collect().fee_estimates
+        self.assertEqual(list(estimates), [2, 3, 6, 144])
+        self.assertAlmostEqual(estimates[2], 5.0)
+        self.assertAlmostEqual(estimates[144], 10 / 144)
+
+    def test_unavailable_estimates_are_none(self):
+        def estimate(target):
+            if target == 2:
+                raise RPCError("Fee estimation disabled")
+            return {"errors": ["Insufficient data or no feerate found"], "blocks": 0}
+
+        self.rpc.estimate_smart_fee.side_effect = estimate
+        self.assertEqual(self.collect().fee_estimates, {2: None, 3: None, 6: None, 144: None})
+
+    def test_estimates_refresh_with_the_mempool_not_every_cycle(self):
+        with patch("btcmonitor.collector.time.monotonic", return_value=1000.0):
+            self.collect()
+            self.collect()
+        self.assertEqual(self.rpc.estimate_smart_fee.call_count, 4)
 
 
 class InitialBlockDownloadTests(CollectorTestCase):

@@ -14,6 +14,9 @@ from btcmonitor.models import (
 )
 from btcmonitor.panels import (
     ascii_histogram,
+    block_grid_size,
+    fee_estimates_line,
+    format_fee_rate,
     get_bitcoin_info_panel,
     get_fee_color,
     get_mempool_panel,
@@ -178,6 +181,37 @@ class SyncPanelTests(unittest.TestCase):
     def test_progress_bar_fill(self):
         self.assertEqual(progress_bar(0.25, 8).plain, "██░░░░░░")
         self.assertEqual(progress_bar(1.5, 4).plain, "████")
+
+
+class FeeEstimatePanelTests(unittest.TestCase):
+    def test_estimates_line(self):
+        line = fee_estimates_line({2: 12.43, 3: 8.1, 6: None, 144: 1.0})
+        self.assertEqual(line.plain, "Fee est: 2 blk 12.4 · 3 blk 8.10 · 6 blk – · 1 day 1.00 sat/vB\n")
+        styles = {line.plain[span.start : span.end]: span.style for span in line.spans}
+        self.assertEqual((styles["12.4"], styles["1.00"]), ("yellow", "blue"))
+
+    def test_no_data_yet_and_no_estimates(self):
+        self.assertIn("not enough data yet", fee_estimates_line({2: None, 144: None}).plain)
+        self.assertEqual(fee_estimates_line(None).plain, "")
+
+    def test_format_fee_rate(self):
+        self.assertEqual(
+            (format_fee_rate(1.012), format_fee_rate(9.999), format_fee_rate(25.04)), ("1.01", "10.00", "25.0")
+        )
+
+    def test_projection_panel_shows_estimates_and_keeps_legend(self):
+        proj = BlockProjection(1, 250, [Transaction(3.0, 250, "a")], [])
+        estimates = {2: 3.0, 3: 2.5, 6: 2.0, 144: 1.0}
+        for width in (100, 140):
+            with self.subTest(width=width):
+                console = Console(file=io.StringIO(), width=width // 2, height=30, record=True, color_system=None)
+                console.print(get_projection_panel(proj, width, 45, estimates), height=30)
+                text = console.export_text()
+                self.assertIn("1 day 1.00", text.replace("\n", " ").replace("│", " ").replace("  ", " "))
+                self.assertIn("Fee Legend", text)  # the grid left room for the legend
+
+    def test_wrapped_estimates_take_grid_rows(self):
+        self.assertEqual(block_grid_size(140, 45, 1)[1], block_grid_size(140, 45, 0)[1] - 1)
 
 
 class BlockGridTests(unittest.TestCase):

@@ -134,6 +134,9 @@ class BitcoinRPC:
     def get_block_template(self) -> dict[str, Any]:
         return self.call("getblocktemplate", {"rules": ["segwit"]})
 
+    def estimate_smart_fee(self, conf_target: int) -> dict[str, Any]:
+        return self.call("estimatesmartfee", conf_target)
+
     def get_best_block_hash(self) -> str:
         return self.call("getbestblockhash")
 

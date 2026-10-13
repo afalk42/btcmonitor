@@ -123,7 +123,7 @@ class Dashboard:
             self.layout["top_transactions"].update(
                 get_top_transactions_panel(data.mempool, price, width, transactions_height, scroll_offset)
             )
-            self.layout["projection"].update(get_projection_panel(data.projection, width, height))
+            self.layout["projection"].update(get_projection_panel(data.projection, width, height, data.fee_estimates))
 
             syncing = data.sync is not None
             self.layout["bottom"].visible = not syncing

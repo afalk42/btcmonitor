@@ -217,26 +217,62 @@ def render_block_grid(transactions: list[Transaction], width: int, height: int) 
     return text
 
 
-def block_grid_size(terminal_width: int, terminal_height: int) -> tuple[int, int]:
+def block_grid_size(terminal_width: int, terminal_height: int, extra_lines: int = 0) -> tuple[int, int]:
     """Grid cells that fit the projection panel: about half the width and 2/3 of the height,
-    less room for borders, the summary lines and the legend"""
+    less room for borders, the summary lines and the legend, and `extra_lines` more"""
     width = max(20, min(80, (terminal_width // 2) - 6))
-    height = max(6, min(40, (2 * terminal_height // 3) - 8))
+    height = max(6, min(40, (2 * terminal_height // 3) - 8 - extra_lines))
     return width, height
 
 
-def get_projection_panel(proj: BlockProjection | None, terminal_width: int, terminal_height: int) -> Panel:
+def format_fee_rate(sat_per_vbyte: float) -> str:
+    """Two decimals below 10 sat/vB, where 1.00 vs 1.01 matters; one above"""
+    return f"{sat_per_vbyte:.2f}" if sat_per_vbyte < 10 else f"{sat_per_vbyte:.1f}"
+
+
+def fee_estimates_line(estimates: dict[int, float | None] | None) -> Text:
+    """e.g. "Fee est: 2 blk 12.4 · 6 blk 8.10 · 1 day 1.00 sat/vB" """
+    text = Text()
+    if not estimates:
+        return text
+    text.append("Fee est: ")
+    if all(rate is None for rate in estimates.values()):
+        text.append("not enough data yet\n", style="dim")
+        return text
+    for i, (target, rate) in enumerate(estimates.items()):
+        if i:
+            text.append(" · ", style="dim")
+        text.append("1 day " if target == 144 else f"{target} blk ")
+        if rate is None:
+            text.append("–", style="dim")
+        else:
+            text.append(format_fee_rate(rate), style=get_fee_color(rate))
+    text.append(" sat/vB\n")
+    return text
+
+
+def get_projection_panel(
+    proj: BlockProjection | None,
+    terminal_width: int,
+    terminal_height: int,
+    fee_estimates: dict[int, float | None] | None = None,
+) -> Panel:
     if not proj:
         return Panel(Text("…"), title="Next Block Template", box=ROUNDED)
 
     text = Text()
     text.append(f"Transactions: {proj.est_tx:,} | Size: {format_bytes(proj.est_weight_vbytes)}\n")
+    estimates = fee_estimates_line(fee_estimates)
+    text.append(estimates)
+    # Lines the estimate takes once wrapped to the panel (about half the terminal, less borders)
+    estimate_lines = -(-len(estimates.plain.rstrip()) // max(1, terminal_width // 2 - 4))
 
     if proj.transactions:
         fee_rates = [tx.fee_rate for tx in proj.transactions]
         avg_fee = sum(fee_rates) / len(fee_rates)
         text.append(f"Fee: {min(fee_rates):.1f}-{max(fee_rates):.1f} (avg: {avg_fee:.1f}) sat/vB\n\n")
-        text.append(render_block_grid(proj.transactions, *block_grid_size(terminal_width, terminal_height)))
+        grid_size = block_grid_size(terminal_width, terminal_height, estimate_lines)
+        text.append(render_block_grid(proj.transactions, *grid_size))
 
         text.append("\nFee Legend: ")
         for threshold, color in FEE_COLORS:

@@ -7,6 +7,9 @@ from .models import BlockProjection, FeeBuckets, Transaction
 # Lower bounds of the fee-rate bands, in sat/vB
 FEE_BANDS = [1, 2, 3, 5, 10, 20, 50, 100, 500, 1000]
 
+# Confirmation targets for estimatesmartfee, in blocks (Bitcoin Core's shortest target is 2)
+FEE_ESTIMATE_TARGETS = (2, 3, 6, 144)
+
 BLOCK_CAPACITY_VBYTES = 1_000_000
 SYNTHETIC_TX_VBYTES = 250  # size of the stand-in transactions the mempool fallback draws
 
@@ -36,6 +39,12 @@ def bucket_fee_rate(label: str) -> float:
         # The lowest band (< 2 sat/vB) uses 1 sat/vB for estimation/coloring.
         return 1.0
     return float(label.split()[0].rstrip("+"))
+
+
+def estimate_to_sat_per_vbyte(estimate: dict) -> float | None:
+    """sat/vB from an estimatesmartfee result (feerate is BTC/kvB), or None if it reported errors"""
+    feerate = estimate.get("feerate")
+    return feerate * 1e5 if feerate is not None and not estimate.get("errors") else None
 
 
 def project_block_from_template(template: dict) -> BlockProjection:
