@@ -1,7 +1,7 @@
 from __future__ import annotations
+
 import argparse
 import os
-import sys
 
 from .rpc import BitcoinRPC, RPCConfig
 from .ui import render_dashboard

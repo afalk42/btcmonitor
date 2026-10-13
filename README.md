@@ -82,12 +82,14 @@ If `--rpc-user`/`--rpc-password` are omitted, cookie authentication will be atte
 ## Quit
 - Press `q` or `Ctrl+C`
 
-## Tests
+## Tests and linting
 
-After installing the project in your virtual environment, run:
+After installing the project with its development extras in your virtual environment, run:
 
 ```bash
+pip install -e ".[dev]"
 python -m unittest discover -v
+ruff check .
 ```
 
-The tests run offline and do not require a Bitcoin Core node.
+The tests run offline and do not require a Bitcoin Core node. GitHub Actions runs the same checks on every push and pull request.

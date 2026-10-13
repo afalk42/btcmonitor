@@ -1,24 +1,22 @@
 from __future__ import annotations
-import time
-import math
-import threading
-import sys
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
-import urllib.request
+
 import json
+import threading
+import time
+import urllib.request
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
 
 import psutil
 import readchar
+from rich.box import ROUNDED
 from rich.console import Console
+from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
-from rich.layout import Layout
-from rich.progress import BarColumn, Progress, TextColumn
 from rich.text import Text
-from rich.box import ROUNDED
 
 from .rpc import BitcoinRPC, RPCError
 
@@ -670,7 +668,7 @@ def _load_transactions_background(rpc: BitcoinRPC, txids_to_process: List[str], 
                     fee_rate=fee_rate
                 )
                 processed_count += 1
-        except Exception as e:
+        except Exception:
             error_count += 1
             # If lookup fails, continue with next transaction
             continue
