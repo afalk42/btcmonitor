@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 
 from .paths import DEFAULT_RPC_PORTS
 from .rpc import BitcoinRPC, RPCConfig
@@ -20,6 +21,8 @@ def parse_args(argv=None):
     p.add_argument("--rpc-user", default=os.getenv("BITCOIN_RPC_USER"))
     p.add_argument("--rpc-password", default=os.getenv("BITCOIN_RPC_PASSWORD"))
     p.add_argument("--network", default=os.getenv("BITCOIN_NETWORK", "mainnet"), choices=list(DEFAULT_RPC_PORTS))
+    p.add_argument("--datadir", type=Path, default=os.getenv("BITCOIN_DATADIR"),
+                   help="Bitcoin Core data directory, used to find the auth cookie (default: platform default)")
     p.add_argument("--refresh", type=float, default=2.0, help="Refresh rate in Hz (default 2)")
     return p.parse_args(argv)
 
@@ -31,6 +34,7 @@ def build_config(args) -> RPCConfig:
         user=args.rpc_user,
         password=args.rpc_password,
         network=args.network,
+        datadir=Path(args.datadir) if args.datadir else None,
     )
 
 

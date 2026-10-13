@@ -24,19 +24,23 @@ DEFAULT_RPC_PORTS = {
 }
 
 
-def discover_default_datadir(network: str = "mainnet") -> Path:
+def default_base_datadir() -> Path:
+    """Bitcoin Core's default data directory for this platform (without the network subdirectory)"""
     home = Path.home()
     if sys.platform.startswith("darwin"):
-        base = home / "Library" / "Application Support" / "Bitcoin"
-    elif sys.platform.startswith("win"):
-        base = Path(os.getenv("APPDATA", home / "AppData" / "Roaming")) / "Bitcoin"
-    else:
-        base = home / ".bitcoin"
+        return home / "Library" / "Application Support" / "Bitcoin"
+    if sys.platform.startswith("win"):
+        return Path(os.getenv("APPDATA", home / "AppData" / "Roaming")) / "Bitcoin"
+    return home / ".bitcoin"
+
+
+def discover_default_datadir(network: str = "mainnet", datadir: Optional[Path] = None) -> Path:
+    """Network-specific data directory, under `datadir` if given, else under the platform default"""
+    base = Path(datadir).expanduser() if datadir else default_base_datadir()
     subdir = NETWORK_SUBDIRS.get(network, "")
     return base / subdir if subdir else base
 
 
-def discover_cookie_path(network: str = "mainnet") -> Optional[Path]:
-    datadir = discover_default_datadir(network)
-    cookie = datadir / ".cookie"
+def discover_cookie_path(network: str = "mainnet", datadir: Optional[Path] = None) -> Optional[Path]:
+    cookie = discover_default_datadir(network, datadir) / ".cookie"
     return cookie if cookie.exists() else None

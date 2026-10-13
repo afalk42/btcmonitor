@@ -65,7 +65,7 @@ By default it auto-discovers the datadir and cookie file for the default network
 btcmonitor --network mainnet --rpc-host 127.0.0.1 --rpc-port 8332 --rpc-user user --rpc-password pass
 ```
 
-If `--rpc-user`/`--rpc-password` are omitted, cookie authentication will be attempted.
+If `--rpc-user`/`--rpc-password` are omitted, cookie authentication will be attempted. If your node uses a non-default data directory, pass it with `--datadir` (or `BITCOIN_DATADIR`) so the cookie can be found.
 
 `--network` accepts `mainnet`, `testnet` (alias `testnet3`), `testnet4`, `signet` and `regtest`. Unless `--rpc-port` is given, the network's standard RPC port is used (8332, 18332, 48332, 38332 and 18443 respectively).
 
