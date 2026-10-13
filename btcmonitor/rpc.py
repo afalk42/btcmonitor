@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,15 @@ class BitcoinRPC:
         self._url = f"http://{config.host}:{config.port}"
         self._cookie_path: Path | None = None
         self._auth_header = self._build_auth_header()
+        # One keep-alive session per thread: requests.Session is not thread-safe, and the collector
+        # and the transaction loader call the node concurrently
+        self._local = threading.local()
+
+    def _session(self) -> requests.Session:
+        session = getattr(self._local, "session", None)
+        if session is None:
+            session = self._local.session = requests.Session()
+        return session
 
     def _find_cookie(self) -> Path | None:
         if self.config.cookie_file is not None:
@@ -60,7 +70,7 @@ class BitcoinRPC:
 
     def _post(self, payload: dict[str, Any], auth_header: dict[str, str]) -> requests.Response:
         try:
-            return requests.post(
+            return self._session().post(
                 self._url,
                 headers={"Content-Type": "application/json", **auth_header},
                 data=json.dumps(payload),
