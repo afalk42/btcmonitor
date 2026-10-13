@@ -6,7 +6,13 @@ import threading
 import time
 
 from .chain import calculate_halving_info, get_current_subsidy
-from .fees import build_fee_buckets, project_block_from_buckets, project_block_from_template
+from .fees import (
+    FEE_ESTIMATE_TARGETS,
+    build_fee_buckets,
+    estimate_to_sat_per_vbyte,
+    project_block_from_buckets,
+    project_block_from_template,
+)
 from .models import BitcoinInfo, BlockProjection, DashboardData, FeeBuckets, MempoolView, NodeSnapshot, SyncProgress
 from .price import PriceFeed
 from .rpc import BitcoinRPC, RPCError
@@ -44,6 +50,7 @@ class Collector:
         self._mempool: dict[str, dict] = {}
         self._fee_buckets: FeeBuckets = []
         self._projection: BlockProjection | None = None
+        self._fee_estimates: dict[int, float | None] = {}
         self._mempool_fetched_at: float | None = None
         self._mempool_height: int | None = None
         self._best_hash: str | None = None
@@ -138,7 +145,14 @@ class Collector:
                 size_on_disk=bi.get("size_on_disk"),
                 pruned=bool(bi.get("pruned", False)),
             )
-        return DashboardData(node=node, mempool=mempool, projection=self._projection, bitcoin=bitcoin, sync=sync)
+        return DashboardData(
+            node=node,
+            mempool=mempool,
+            projection=self._projection,
+            bitcoin=bitcoin,
+            sync=sync,
+            fee_estimates=self._fee_estimates,
+        )
 
     def _refresh_mempool(self, height: int) -> None:
         self._mempool = self.rpc.get_raw_mempool(True)
@@ -149,6 +163,13 @@ class Collector:
         except RPCError:
             # No template during initial block download or without peers: estimate from the mempool
             self._projection = project_block_from_buckets(self._fee_buckets)
+        self._fee_estimates = {target: self._estimate_fee(target) for target in FEE_ESTIMATE_TARGETS}
+
+    def _estimate_fee(self, target: int) -> float | None:
+        try:
+            return estimate_to_sat_per_vbyte(self.rpc.estimate_smart_fee(target))
+        except RPCError:
+            return None
 
     def _last_block_time(self, blockchain_info: dict) -> int | None:
         """Timestamp of the best block, fetched only when the best block changes"""

@@ -88,4 +88,6 @@ class DashboardData:
     projection: BlockProjection | None = None
     bitcoin: BitcoinInfo | None = None
     sync: SyncProgress | None = None  # set only during initial block download
+    # sat/vB per confirmation target in blocks; None where the node has too little data
+    fee_estimates: dict[int, float | None] | None = None
     error: str | None = None

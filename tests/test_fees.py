@@ -3,6 +3,7 @@ import unittest
 from btcmonitor.fees import (
     bucket_fee_rate,
     build_fee_buckets,
+    estimate_to_sat_per_vbyte,
     project_block_from_buckets,
     project_block_from_template,
 )
@@ -59,6 +60,16 @@ class BuildFeeBucketsTests(unittest.TestCase):
     def test_vsize_falls_back_to_weight(self):
         buckets = dict(build_fee_buckets({"tx": {"weight": 800, "fees": {"base": 0.00001}}}))
         self.assertEqual(buckets["5+ sat/vB"], 200)
+
+
+class FeeEstimateTests(unittest.TestCase):
+    def test_btc_per_kvb_to_sat_per_vbyte(self):
+        self.assertAlmostEqual(estimate_to_sat_per_vbyte({"feerate": 0.00001012, "blocks": 2}), 1.012)
+        self.assertAlmostEqual(estimate_to_sat_per_vbyte({"feerate": 0.00025, "blocks": 6}), 25.0)
+
+    def test_insufficient_data_is_none(self):
+        self.assertIsNone(estimate_to_sat_per_vbyte({"errors": ["Insufficient data or no feerate found"], "blocks": 0}))
+        self.assertIsNone(estimate_to_sat_per_vbyte({}))
 
 
 class ProjectionTests(unittest.TestCase):

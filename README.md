@@ -9,6 +9,7 @@ A terminal dashboard (TUI) that monitors a local Bitcoin Core node using its JSO
   - Bitcoin price, block subsidy, # of blocks until next halving, time since last block
   - Mempool transaction count, memory size and fee histogram
   - Next block template as well as expected tx count, weight, and fee rate bands
+  - Fee estimates from Bitcoin Core for confirmation within 2, 3 and 6 blocks and one day
   - Scrollable list of the 100 largest transactions in the mempool sorted by BTC output
   - While the node is syncing: progress, blocks per second and estimated time to completion
 
@@ -81,6 +82,7 @@ If no user and password are configured, cookie authentication will be attempted.
 - System stats: CPU, memory, swap, uptime, load average
 - Mempool visualization: fee buckets with ASCII bars
 - Next block projection: approximate composition derived from `getblocktemplate` or mempool fees
+- Fee estimates: `estimatesmartfee` for 2, 3 and 6 blocks and one day (144 blocks), in sat/vB; Bitcoin Core's shortest target is 2 blocks
 - Bitcoin price, block subsidy, # of blocks until next halving, time since last block
 - Scrollable list of the 100 largest transactions in the mempool sorted by BTC output
 - Initial block download view: replaces the mempool panels while the node syncs, with progress, blocks remaining, blocks per second, estimated time left (extrapolated from verification progress over the last two minutes), the date of the block being validated and size on disk
