@@ -638,6 +638,8 @@ _known_txids: set = set()  # Track which transactions we've seen before
 _last_block_height: int = 0  # Track block height to detect new blocks
 _initial_cache_loading: bool = False  # Track if initial cache loading is in progress
 _cache_loading_thread: Optional[threading.Thread] = None
+# Guards _transaction_data_cache, which the background loader writes while the UI thread reads it
+_cache_lock = threading.Lock()
 
 # Scroll state for transactions list
 _transaction_scroll_offset: int = 0  # Current scroll position
@@ -666,12 +668,13 @@ def _load_transactions_background(rpc: BitcoinRPC, txids_to_process: List[str], 
             
             if amount_btc > 0:
                 # Store in persistent cache
-                _transaction_data_cache[txid] = MempoolTransaction(
-                    txid=txid,
-                    amount_btc=amount_btc,
-                    fee_btc=fee_btc,
-                    fee_rate=fee_rate
-                )
+                with _cache_lock:
+                    _transaction_data_cache[txid] = MempoolTransaction(
+                        txid=txid,
+                        amount_btc=amount_btc,
+                        fee_btc=fee_btc,
+                        fee_rate=fee_rate
+                    )
                 processed_count += 1
         except Exception:
             error_count += 1
@@ -693,9 +696,10 @@ def fetch_top_transactions(rpc: BitcoinRPC, mem_verbose: Dict[str, Dict], curren
     if current_block_height > _last_block_height:
         # New block arrived! Remove all cached transactions that are no longer in mempool
         # This handles the case where transactions got confirmed into the new block
-        expired_txids = set(_transaction_data_cache.keys()) - current_txids
-        for txid in expired_txids:
-            _transaction_data_cache.pop(txid, None)
+        with _cache_lock:
+            expired_txids = set(_transaction_data_cache.keys()) - current_txids
+            for txid in expired_txids:
+                _transaction_data_cache.pop(txid, None)
         _last_block_height = current_block_height
         
         # Force a cache refresh since the mempool composition changed significantly
@@ -729,8 +733,9 @@ def fetch_top_transactions(rpc: BitcoinRPC, mem_verbose: Dict[str, Dict], curren
         
         # Remove transactions that are no longer in mempool from our cache
         expired_txids = _known_txids - current_txids
-        for txid in expired_txids:
-            _transaction_data_cache.pop(txid, None)
+        with _cache_lock:
+            for txid in expired_txids:
+                _transaction_data_cache.pop(txid, None)
         
         # Update our known transaction set
         _known_txids = current_txids.copy()
@@ -758,12 +763,13 @@ def fetch_top_transactions(rpc: BitcoinRPC, mem_verbose: Dict[str, Dict], curren
                     
                     if amount_btc > 0:
                         # Store in persistent cache
-                        _transaction_data_cache[txid] = MempoolTransaction(
-                            txid=txid,
-                            amount_btc=amount_btc,
-                            fee_btc=fee_btc,
-                            fee_rate=fee_rate
-                        )
+                        with _cache_lock:
+                            _transaction_data_cache[txid] = MempoolTransaction(
+                                txid=txid,
+                                amount_btc=amount_btc,
+                                fee_btc=fee_btc,
+                                fee_rate=fee_rate
+                            )
                 except Exception:
                     # If lookup fails, continue with next transaction
                     continue
@@ -772,10 +778,11 @@ def fetch_top_transactions(rpc: BitcoinRPC, mem_verbose: Dict[str, Dict], curren
     
     # Rebuild the sorted list from all cached data
     # Only include transactions that are still in the current mempool
-    valid_transactions = [
-        tx for txid, tx in _transaction_data_cache.items() 
-        if txid in current_txids
-    ]
+    with _cache_lock:
+        valid_transactions = [
+            tx for txid, tx in _transaction_data_cache.items()
+            if txid in current_txids
+        ]
     
     # Sort by actual BTC output amount descending and take top 100
     valid_transactions.sort(key=lambda x: x.amount_btc, reverse=True)
