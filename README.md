@@ -98,7 +98,9 @@ The BTC price comes from the public [CoinGecko](https://www.coingecko.com/) API,
 - Initial block download view: replaces the mempool panels while the node syncs, with progress, blocks remaining, blocks per second, estimated time left (extrapolated from verification progress over the last two minutes), the date of the block being validated and size on disk
 
 ## Keys
-- `↑`/`↓`, `PgUp`/`PgDn`, `Home`/`End`: scroll the largest-transactions list
+- `↑`/`↓`, `PgUp`/`PgDn`, `Home`/`End`: select a transaction in the largest-transactions list
+- `Enter`: show the selected transaction's details: size, fee, time in the mempool, RBF signalling, unconfirmed ancestors and descendants, and its inputs and outputs with addresses and amounts
+- `Esc`, `←` or `Enter`: back from the details
 - `q` or `Ctrl+C`: quit
 
 ## Refresh rate
@@ -125,6 +127,7 @@ The tests run offline and do not require a Bitcoin Core node.
 | `rpc.py` | JSON-RPC client with cookie and password authentication |
 | `collector.py` | Polls the node on a background thread and assembles `DashboardData` |
 | `transactions.py` | Background lookups for the largest-transactions list |
+| `txdetail.py` | Details of one mempool transaction, including the coins its inputs spend |
 | `blocks.py` | Recent blocks and mining pool tags |
 | `network.py` | Traffic rates and peer summaries |
 | `sync.py` | Sync speed and time-left estimates during initial block download |

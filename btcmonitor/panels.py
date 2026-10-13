@@ -23,6 +23,7 @@ from .formatting import (
     format_rate,
     format_time_since_block,
     format_txid,
+    shorten_middle,
 )
 from .models import (
     BitcoinInfo,
@@ -34,6 +35,7 @@ from .models import (
     RecentBlock,
     SyncProgress,
     Transaction,
+    TransactionDetail,
 )
 
 # Colors for fee rates, highest threshold (sat/vB) first; anything lower is blue
@@ -195,8 +197,10 @@ def get_top_transactions_panel(
     panel_height: int | None = None,
     scroll_offset: int = 0,
     currency: str | None = "usd",
+    selected: int | None = None,
 ) -> Panel:
-    """`bitcoin_price` is in `currency`; with currency None (price lookups off) no fiat columns are shown"""
+    """`bitcoin_price` is in `currency`; with currency None (price lookups off) no fiat columns are shown.
+    The row at index `selected` is highlighted."""
     title = "Largest Transactions"
     if not view:
         return Panel(Text("Loading..."), title=title, box=ROUNDED)
@@ -224,7 +228,7 @@ def get_top_transactions_panel(
     if show_fiat_fee:
         table.add_column(f"Fee {fiat_label(currency)}", style="bright_green", justify="right", width=10)
 
-    for tx in view.top_transactions[start_idx:end_idx]:
+    for index, tx in enumerate(view.top_transactions[start_idx:end_idx], start=start_idx):
         if bitcoin_price and show_fiat:
             amount_fiat = format_fiat(tx.amount_btc * bitcoin_price, currency)
             fee_fiat = format_fiat(tx.fee_btc * bitcoin_price, currency, decimals=2)
@@ -236,11 +240,11 @@ def get_top_transactions_panel(
         row.append(f"{tx.fee_rate:.1f}")
         if show_fiat_fee:
             row.append(fee_fiat)
-        table.add_row(*row)
+        table.add_row(*row, style="reverse" if index == selected else None)
 
     if total_transactions > visible_rows:
         title += f" ({start_idx + 1}-{end_idx} of {total_transactions})"
-    return Panel(table, title=title, box=ROUNDED)
+    return Panel(table, title=title, subtitle="↑↓ select · Enter details", box=ROUNDED)
 
 
 def render_block_grid(transactions: list[Transaction], width: int, height: int) -> Text:
@@ -406,3 +410,94 @@ def get_sync_panel(sync: SyncProgress, terminal_width: int) -> Panel:
 
     note = Text("\nThe mempool and next-block panels return once the node has caught up.", style="dim")
     return Panel(Group(bar, Text(), table, note), title="Initial Block Download", box=ROUNDED)
+
+
+def _package_text(count: int, fee_rate: float) -> str:
+    if not count:
+        return "none"
+    return f"{count} unconfirmed · {fee_rate:.2f} sat/vB as a package"
+
+
+def get_transaction_detail_panel(
+    txid: str,
+    detail: TransactionDetail | None,
+    error: str | None,
+    price: float | None,
+    currency: str | None,
+    panel_width: int,
+    panel_height: int,
+    now: float | None = None,
+) -> Panel:
+    """Shown instead of the lower panels while a transaction from the largest-transactions list is open"""
+    title = f"Transaction {format_txid(txid)}"
+    hint = Text("Esc, ← or Enter: back · q: quit", style="dim")
+    if error:
+        return Panel(Group(Text(error, style="bold red"), Text(), hint), title=title, box=ROUNDED)
+    if detail is None:
+        return Panel(Group(Text("Looking up transaction…", style="dim"), Text(), hint), title=title, box=ROUNDED)
+
+    now = now if now is not None else time.time()
+    summary = Table.grid(padding=(0, 1))
+    summary.add_column(justify="right", style="bold cyan")
+    summary.add_column(no_wrap=True, overflow="ellipsis")
+    summary.add_row("TxID", detail.txid)
+    summary.add_row("Size", f"{detail.vsize:,} vB ({detail.weight:,} WU)")
+    fee = f"{detail.fee_btc:.8f} BTC · {detail.fee_rate:.2f} sat/vB"
+    if price and currency:
+        fee += f" · {format_fiat(detail.fee_btc * price, currency, decimals=2)}"
+    summary.add_row("Fee", fee)
+    summary.add_row("In Mempool", f"for {format_duration(max(0, now - detail.entry_time))}")
+    if detail.replaceable is not None:
+        summary.add_row("RBF", "signals BIP125 replaceability" if detail.replaceable else "no BIP125 signal")
+    summary.add_row("Ancestors", _package_text(detail.ancestor_count, detail.ancestor_fee_rate))
+    summary.add_row("Descendants", _package_text(detail.descendant_count, detail.descendant_fee_rate))
+
+    inputs, outputs = detail.inputs, detail.outputs
+    # Rows left for inputs and outputs: borders, summary, a blank line, header, totals, blank line, hint
+    room = max(1, panel_height - 2 - summary.row_count - 1 - 1 - 1 - 2)
+    rows = max(len(inputs) + (1 if detail.inputs_not_looked_up else 0), len(outputs))
+    shown = rows if rows <= room else room - 1  # leave a row to say how many more there are
+    address_width = max(12, (panel_width - 4 - 2 * 16 - 4) // 2)
+
+    def input_cells(i: int) -> tuple[str, str]:
+        if i < len(inputs):
+            spent = inputs[i]
+            if spent.amount_btc is None:
+                return shorten_middle(spent.prev, address_width), "?"
+            return shorten_middle(spent.address or "?", address_width), f"{spent.amount_btc:.8f}"
+        if i == len(inputs) and detail.inputs_not_looked_up:
+            return f"+{detail.inputs_not_looked_up} not looked up", ""
+        return "", ""
+
+    def output_cells(i: int) -> tuple[str, str]:
+        if i >= len(outputs):
+            return "", ""
+        out = outputs[i]
+        label = out.address or ("OP_RETURN" if out.script_type == "nulldata" else out.script_type)
+        return shorten_middle(label, address_width), f"{out.amount_btc:.8f}"
+
+    io_table = Table(show_header=True, header_style="bold cyan", box=None, pad_edge=False, expand=True)
+    io_table.add_column(f"Inputs ({len(inputs) + detail.inputs_not_looked_up})", no_wrap=True)
+    io_table.add_column("BTC", justify="right", style="orange1", no_wrap=True)
+    io_table.add_column(f"Outputs ({len(outputs)})", no_wrap=True)
+    io_table.add_column("BTC", justify="right", style="orange1", no_wrap=True)
+    for i in range(shown):
+        io_table.add_row(*input_cells(i), *output_cells(i))
+    if shown < rows:
+        more_in = len(inputs) - min(shown, len(inputs))
+        more_out = len(outputs) - min(shown, len(outputs))
+        io_table.add_row(
+            Text(f"… +{more_in} more" if more_in else "", style="dim"),
+            "",
+            Text(f"… +{more_out} more" if more_out else "", style="dim"),
+            "",
+        )
+    known_in = [spent.amount_btc for spent in inputs if spent.amount_btc is not None]
+    partial = len(known_in) < len(inputs) + detail.inputs_not_looked_up
+    io_table.add_row(
+        Text("Total" + (" (known)" if partial else ""), style="bold"),
+        Text(f"{sum(known_in):.8f}", style="bold"),
+        Text("Total", style="bold"),
+        Text(f"{sum(out.amount_btc for out in outputs):.8f}", style="bold"),
+    )
+    return Panel(Group(summary, Text(), io_table, Text(), hint), title=title, box=ROUNDED)
