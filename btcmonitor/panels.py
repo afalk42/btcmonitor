@@ -20,6 +20,7 @@ from .formatting import (
     format_bytes,
     format_duration,
     format_fiat,
+    format_rate,
     format_time_since_block,
     format_txid,
 )
@@ -28,6 +29,7 @@ from .models import (
     BlockProjection,
     FeeBuckets,
     MempoolView,
+    NetworkInfo,
     NodeSnapshot,
     RecentBlock,
     SyncProgress,
@@ -121,15 +123,37 @@ def get_node_panel(snap: NodeSnapshot | None, err: str | None) -> Panel:
 
     table = Table.grid(padding=(0, 1))
     table.add_column(justify="right", style="bold cyan")
-    table.add_column()
+    table.add_column(no_wrap=True, overflow="ellipsis")  # a wrapped row would push the last rows out of view
     table.add_row("Chain", snap.chain)
     table.add_row("Height", str(snap.height))
     table.add_row("Headers", str(snap.headers))
     table.add_row("Verify", f"{snap.verification_progress * 100:.2f}%")
-    table.add_row("Peers", f"{snap.peers} (In: {snap.inbound_peers} / Out: {snap.outbound_peers})")
+    table.add_row("Peers", f"{snap.peers} ({snap.inbound_peers} in/{snap.outbound_peers} out)")
     table.add_row("Mempool", f"{snap.mempool_tx} txs / {format_bytes(snap.mempool_bytes)}")
     table.add_row("Difficulty", f"{snap.difficulty:.4g}")
     return Panel(table, title="Bitcoin Core", box=ROUNDED)
+
+
+def get_network_panel(net: NetworkInfo | None) -> Panel:
+    if not net:
+        return Panel(Text("…"), title="Network", box=ROUNDED)
+
+    table = Table.grid(padding=(0, 1))
+    table.add_column(justify="right", style="bold green")
+    table.add_column(no_wrap=True, overflow="ellipsis")
+    measuring = Text("measuring…", style="dim")
+    table.add_row("Down", format_rate(net.recv_rate) if net.recv_rate is not None else measuring)
+    table.add_row("Up", format_rate(net.send_rate) if net.send_rate is not None else measuring)
+    table.add_row("Total", f"↓{format_bytes(net.total_recv, 1)} ↑{format_bytes(net.total_sent, 1)}")
+    types = " · ".join(f"{count} {name}" for name, count in net.outbound_types.items())
+    table.add_row("Out", types or "none")
+    peers = net.inbound + net.outbound
+    table.add_row("v2", f"{net.v2_peers} of {peers} encrypted" if peers else "no peers")
+    if net.clients:
+        client, count = net.clients[0]
+        others = peers - count
+        table.add_row("Client", f"{client} ×{count}" + (f" +{others}" if others > 0 else ""))
+    return Panel(table, title="Network", box=ROUNDED)
 
 
 def ascii_histogram(buckets: FeeBuckets, max_width: int = 40) -> Text:

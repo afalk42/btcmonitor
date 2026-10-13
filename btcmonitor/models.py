@@ -24,6 +24,19 @@ class NodeSnapshot:
 
 
 @dataclass
+class NetworkInfo:
+    recv_rate: float | None  # bytes/s; None until two samples exist
+    send_rate: float | None
+    total_recv: int  # bytes since the node started
+    total_sent: int
+    inbound: int
+    outbound: int
+    outbound_types: dict[str, int]  # short connection type -> count, e.g. {"full": 8, "block": 2}
+    v2_peers: int  # peers on BIP324 encrypted (v2) transport
+    clients: list[tuple[str, int]]  # user agents by count, most common first
+
+
+@dataclass
 class SyncProgress:
     """Initial block download status; rates and ETA are None until enough samples exist"""
 
@@ -104,4 +117,5 @@ class DashboardData:
     # sat/vB per confirmation target in blocks; None where the node has too little data
     fee_estimates: dict[int, float | None] | None = None
     recent_blocks: list[RecentBlock] | None = None  # newest first
+    network: NetworkInfo | None = None
     error: str | None = None

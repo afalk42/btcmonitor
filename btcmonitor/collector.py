@@ -20,10 +20,12 @@ from .models import (
     DashboardData,
     FeeBuckets,
     MempoolView,
+    NetworkInfo,
     NodeSnapshot,
     RecentBlock,
     SyncProgress,
 )
+from .network import TrafficRate, summarize_peers
 from .price import PriceFeed
 from .rpc import BitcoinRPC, RPCError
 from .sync import SyncRate
@@ -53,6 +55,7 @@ class Collector:
         self.tracker = tracker or TransactionTracker(rpc)
         self.sync_rate = SyncRate()
         self.recent_blocks = RecentBlocks(rpc)
+        self.traffic = TrafficRate()
         # Replaced wholesale after each cycle; readers on other threads just take the reference
         self.latest = DashboardData()
 
@@ -102,6 +105,7 @@ class Collector:
             inbound_count = sum(1 for peer in peer_info if peer.get("inbound", False))
             outbound_count = len(peer_info) - inbound_count
         except Exception:
+            peer_info = []
             inbound_count, outbound_count = 0, peers
 
         node = NodeSnapshot(
@@ -120,6 +124,7 @@ class Collector:
 
         now = time.monotonic()
         self.sync_rate.add(now, height, node.verification_progress)
+        network = self._network_info(now, peer_info, inbound_count, outbound_count)
         if (
             self._mempool_fetched_at is None
             or now - self._mempool_fetched_at >= self.mempool_seconds
@@ -169,6 +174,7 @@ class Collector:
             sync=sync,
             fee_estimates=self._fee_estimates,
             recent_blocks=recent_blocks,
+            network=network,
         )
 
     def _refresh_mempool(self, height: int) -> None:
@@ -187,6 +193,27 @@ class Collector:
             return estimate_to_sat_per_vbyte(self.rpc.estimate_smart_fee(target))
         except RPCError:
             return None
+
+    def _network_info(self, now: float, peer_info: list[dict], inbound: int, outbound: int) -> NetworkInfo | None:
+        try:
+            totals = self.rpc.get_net_totals()
+            total_recv, total_sent = int(totals["totalbytesrecv"]), int(totals["totalbytessent"])
+        except Exception:
+            return None  # auxiliary, like the peer breakdown: the rest of the dashboard still works
+        self.traffic.add(now, total_recv, total_sent)
+        rates = self.traffic.rates
+        outbound_types, v2_peers, clients = summarize_peers(peer_info)
+        return NetworkInfo(
+            recv_rate=rates[0] if rates else None,
+            send_rate=rates[1] if rates else None,
+            total_recv=total_recv,
+            total_sent=total_sent,
+            inbound=inbound,
+            outbound=outbound,
+            outbound_types=outbound_types,
+            v2_peers=v2_peers,
+            clients=clients,
+        )
 
     def _update_recent_blocks(self, height: int) -> list[RecentBlock] | None:
         """Recent blocks ending at the best block _last_block_time found; the previous list on failure"""

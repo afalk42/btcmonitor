@@ -8,6 +8,7 @@ from btcmonitor.models import (
     BlockProjection,
     MempoolTransaction,
     MempoolView,
+    NetworkInfo,
     NodeSnapshot,
     RecentBlock,
     SyncProgress,
@@ -20,6 +21,7 @@ from btcmonitor.panels import (
     get_bitcoin_info_panel,
     get_fee_color,
     get_mempool_panel,
+    get_network_panel,
     get_node_panel,
     get_projection_panel,
     get_recent_blocks_panel,
@@ -150,9 +152,38 @@ class OtherPanelTests(unittest.TestCase):
         self.assertIn("connection refused", render(get_node_panel(None, "connection refused")))
         snap = NodeSnapshot(840000, 840001, 0.99999, "main", 10, 2, 8, 2048, 7, 8.3e13)
         text = render(get_node_panel(snap, None))
-        self.assertIn("10 (In: 2 / Out: 8)", text)
+        self.assertIn("10 (2 in/8 out)", text)
         self.assertIn("7 txs / 2 KB", text)
         self.assertIn("100.00%", text)
+
+    def test_network_panel(self):
+        net = NetworkInfo(
+            recv_rate=1.2 * 1024**2,
+            send_rate=310 * 1024,
+            total_recv=8 * 1024**3,
+            total_sent=1536 * 1024**2,
+            inbound=0,
+            outbound=10,
+            outbound_types={"full": 8, "block": 2},
+            v2_peers=9,
+            clients=[("Satoshi:31.1.0", 5), ("Satoshi:30.2.0", 2)],
+        )
+        text = render(get_network_panel(net), width=40)
+        for expected in (
+            "1.2 MB/s",
+            "310.0 KB/s",
+            "↓8.0 GB ↑1.5 GB",
+            "8 full · 2 block",
+            "9 of 10 encrypted",
+            "Satoshi:31.1.0 ×5 +5",
+        ):
+            self.assertIn(expected, text)
+
+    def test_network_panel_before_rates_are_known(self):
+        net = NetworkInfo(None, None, 0, 0, 0, 0, {}, 0, [])
+        text = render(get_network_panel(net), width=40)
+        self.assertEqual(text.count("measuring…"), 2)
+        self.assertIn("no peers", text)
 
     def test_mempool_panel(self):
         text = render(get_mempool_panel(mempool_view(3)))

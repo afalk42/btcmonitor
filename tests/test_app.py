@@ -8,7 +8,14 @@ from rich.console import Console
 from btcmonitor.app import Dashboard
 from btcmonitor.collector import Collector
 from btcmonitor.keyboard import KeyReader
-from btcmonitor.models import DashboardData, MempoolTransaction, MempoolView, RecentBlock, SyncProgress
+from btcmonitor.models import (
+    DashboardData,
+    MempoolTransaction,
+    MempoolView,
+    NodeSnapshot,
+    RecentBlock,
+    SyncProgress,
+)
 
 
 def key_reader(*keys):
@@ -33,7 +40,7 @@ def data_with_transactions(count):
 class DashboardTests(unittest.TestCase):
     def setUp(self):
         self.output = io.StringIO()
-        # 40 lines tall: 7 top + 15 mempool leaves an 18-line transactions panel showing 16 rows
+        # 40 lines tall: 9 top + 15 mempool leaves a 16-line transactions panel showing 14 rows
         self.console = Console(file=self.output, width=120, height=40, color_system=None)
         self.dashboard = Dashboard(Mock(spec=Collector), console=self.console)
 
@@ -46,14 +53,14 @@ class DashboardTests(unittest.TestCase):
         self.assertTrue(self.dashboard.quit.is_set())
 
     def test_scroll_keys_stay_within_list(self):
-        self.dashboard.update_layout(data_with_transactions(100))  # 16 visible rows -> max offset 84
+        self.dashboard.update_layout(data_with_transactions(100))  # 14 visible rows -> max offset 86
         for key, expected in (
             (readchar.key.UP, 0),
             (readchar.key.DOWN, 1),
             (readchar.key.PAGE_DOWN, 11),
-            (readchar.key.END, 84),
-            (readchar.key.DOWN, 84),
-            (readchar.key.PAGE_UP, 74),
+            (readchar.key.END, 86),
+            (readchar.key.DOWN, 86),
+            (readchar.key.PAGE_UP, 76),
             (readchar.key.HOME, 0),
         ):
             self.dashboard.handle_key(key)
@@ -63,7 +70,7 @@ class DashboardTests(unittest.TestCase):
         self.dashboard.update_layout(data_with_transactions(100))
         self.dashboard.handle_key(readchar.key.END)
         self.dashboard.update_layout(data_with_transactions(20))
-        self.assertEqual(self.dashboard.scroll_offset, 4)
+        self.assertEqual(self.dashboard.scroll_offset, 6)
 
     def test_sync_panel_replaces_mempool_panels_during_ibd(self):
         syncing = DashboardData(sync=SyncProgress(10, 900_000, 0.0001, None, None, None, None))
@@ -85,6 +92,14 @@ class DashboardTests(unittest.TestCase):
         output = self.output.getvalue()
         self.assertLess(output.index("Next Block Template"), output.index("Recent Blocks"))
         self.assertIn("F2Pool", output)
+
+    def test_top_row_shows_all_bitcoin_core_rows_and_network_panel(self):
+        snap = NodeSnapshot(840000, 840001, 0.99999, "main", 10, 2, 8, 2048, 7, 8.3e13)
+        self.dashboard.update_layout(DashboardData(node=snap))
+        self.console.print(self.dashboard.layout)
+        output = self.output.getvalue()
+        self.assertIn("Network", output)
+        self.assertIn("Difficulty", output)  # used to be cut off by a too-short top row
 
     def test_node_error_is_shown(self):
         self.dashboard.update_layout(DashboardData(error="connection refused"))

@@ -15,6 +15,7 @@ from .models import DashboardData
 from .panels import (
     get_bitcoin_info_panel,
     get_mempool_panel,
+    get_network_panel,
     get_node_panel,
     get_projection_panel,
     get_recent_blocks_panel,
@@ -26,7 +27,7 @@ from .panels import (
 from .price import PriceFeed
 from .rpc import BitcoinRPC
 
-TOP_ROW_HEIGHT = 7
+TOP_ROW_HEIGHT = 9  # seven rows (the Bitcoin Core panel's) + borders
 MEMPOOL_PANEL_HEIGHT = 15  # title + histogram + borders
 RECENT_BLOCKS_PANEL_HEIGHT = 8  # header + five blocks + borders
 
@@ -43,6 +44,7 @@ def build_layout() -> Layout:
         Layout(name="sys"),
         Layout(name="bitcoin_info"),
         Layout(name="node"),
+        Layout(name="network"),
     )
     layout["bottom"].split_row(
         Layout(name="left"),
@@ -125,6 +127,7 @@ class Dashboard:
             self.layout["sys"].update(get_system_panel())
             self.layout["bitcoin_info"].update(get_bitcoin_info_panel(data.bitcoin))
             self.layout["node"].update(get_node_panel(data.node, data.error))
+            self.layout["network"].update(get_network_panel(data.network))
             self.layout["mempool"].update(get_mempool_panel(data.mempool))
             price = data.bitcoin.price if data.bitcoin else None
             currency = data.bitcoin.currency if data.bitcoin else None

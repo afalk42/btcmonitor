@@ -12,7 +12,7 @@ Candidate features for btcmonitor, roughly in order of value. Each item is meant
 
 4. ✅ *2026-10-13* — **Price privacy and currency options.** The price lookup sends a request to CoinGecko from the node's IP address about once a minute, which node operators may not want. Add `--no-price` to turn it off, and a currency option for non-USD prices.
 
-5. **Networking details.** Bandwidth from `getnettotals`, plus peer client versions and connection types (including BIP324 v2 transport) from `getpeerinfo`.
+5. ✅ *2026-10-13* — **Networking details.** Bandwidth from `getnettotals`, plus peer client versions and connection types (including BIP324 v2 transport) from `getpeerinfo`.
 
 6. **Transaction detail view.** Press Enter on a row in the largest-transactions list to see inputs, outputs, fee, ancestors and descendants for that transaction.
 

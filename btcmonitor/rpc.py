@@ -155,5 +155,8 @@ class BitcoinRPC:
     def get_block_stats(self, height: int, stats: list[str]) -> dict[str, Any]:
         return self.call("getblockstats", height, stats)
 
+    def get_net_totals(self) -> dict[str, Any]:
+        return self.call("getnettotals")
+
     def get_peer_info(self) -> Any:
         return self.call("getpeerinfo")
