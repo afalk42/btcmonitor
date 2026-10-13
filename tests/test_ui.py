@@ -151,6 +151,19 @@ class BlockProjectionTests(unittest.TestCase):
         self.assertEqual(projection.transactions[0].txid, "template-tx")
         self.assertEqual(projection.transactions[0].fee_rate, 5)
 
+    def test_block_template_fee_buckets_use_real_fees(self):
+        self.rpc.get_block_template.side_effect = None
+        self.rpc.get_block_template.return_value = {
+            "transactions": [
+                {"txid": "a", "weight": 800, "fee": 10000},  # 200 vB at 50 sat/vB
+                {"txid": "b", "weight": 400, "fee": 300},  # 100 vB at 3 sat/vB
+            ]
+        }
+        buckets = dict(self.projection().fee_buckets)
+        self.assertEqual(buckets["50+ sat/vB"], 200)
+        self.assertEqual(buckets["3+ sat/vB"], 100)
+        self.assertEqual(sum(buckets.values()), 300)
+
 
 if __name__ == "__main__":
     unittest.main()

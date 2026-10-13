@@ -525,19 +525,23 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
             
             # Create Transaction objects from block template
             transactions = []
+            # Same shape as getrawmempool verbose entries, so build_fee_buckets can bucket the template
+            template_entries: Dict[str, Dict] = {}
             for i, tx in enumerate(txs):
                 vbytes = tx.get("weight", 0) // 4
                 fee_btc = tx.get("fee", 0) / 1e8
                 fee_rate = (fee_btc * 1e8) / max(1, vbytes)  # sat/vB
+                txid = tx.get("txid", f"tx_{i}")
                 
                 transactions.append(Transaction(
                     fee_rate=fee_rate,
                     vbytes=vbytes,
-                    txid=tx.get("txid", f"tx_{i}")
+                    txid=txid
                 ))
+                template_entries[txid] = {"vsize": vbytes, "fees": {"base": fee_btc}}
             
             total_vb = sum(tx.vbytes for tx in transactions)
-            proj_buckets = build_fee_buckets({t.txid: {"vsize": t.vbytes, "fees": {"base": t.fee_rate/1e8}} for t in transactions})
+            proj_buckets = build_fee_buckets(template_entries)
             proj = BlockProjection(
                 est_tx=len(transactions), 
                 est_weight_vbytes=total_vb, 
