@@ -28,6 +28,8 @@ Releases are published to [PyPI](https://pypi.org/project/btcmonitor/) by the `R
 
 PyPI never accepts the same version twice, so a mistake means bumping the version (e.g. to 0.9.1) rather than re-uploading.
 
+To check a release without publishing, run the workflow by hand (*Actions → Release → Run workflow*, or `gh workflow run release.yml`). It runs the tests, builds the package and checks it, but skips the version-tag check and the upload.
+
 To check the package locally before releasing:
 
 ```bash

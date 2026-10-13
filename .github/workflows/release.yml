@@ -2,9 +2,12 @@ name: Release
 
 # Publishes to PyPI when a GitHub release is published. Uses PyPI trusted publishing, so no
 # API token is stored here; see RELEASING.md for the one-time PyPI setup.
+# Running it by hand (Actions → Release → Run workflow) is a dry run: it builds and checks the
+# package but does not publish.
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,6 +22,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Check that the release tag matches the package version
+        if: github.event_name == 'release'
         run: |
           version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
           if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
@@ -29,13 +33,14 @@ jobs:
       - run: python -m unittest discover
       - run: python -m build
       - run: twine check --strict dist/*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
 
   publish:
     needs: build
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment:
@@ -44,7 +49,7 @@ jobs:
     permissions:
       id-token: write  # for PyPI trusted publishing
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
