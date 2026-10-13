@@ -229,12 +229,13 @@ def build_fee_buckets(mempool: Dict[str, Dict]) -> List[Tuple[str, int]]:
     bands = [1, 2, 3, 5, 10, 20, 50, 100, 500, 1000]
     vbytes_per_band = [0 for _ in bands]
     for tx in mempool.values():
-        fee_sat = int(tx.get("fees", {}).get("base", 0) * 1e8)
+        # round() rather than int(): BTC floats like 0.00000059 * 1e8 come out just below the whole sat
+        fee_sat = round(tx.get("fees", {}).get("base", 0) * 1e8)
         vsize = tx.get("vsize") or tx.get("weight", 0) // 4
         fr = fee_sat / max(1, vsize)
-        # find band index
+        # find band index; a rate equal to a band's lower bound belongs to that band ("2+" includes 2)
         idx = 0
-        while idx < len(bands) - 1 and fr > bands[idx + 1]:
+        while idx < len(bands) - 1 and fr >= bands[idx + 1]:
             idx += 1
         vbytes_per_band[idx] += int(vsize)
     labels: List[Tuple[str, int]] = []

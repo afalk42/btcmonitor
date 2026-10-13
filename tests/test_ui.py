@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from btcmonitor.rpc import BitcoinRPC, RPCError
-from btcmonitor.ui import ascii_histogram, bucket_fee_rate, gather_snapshot
+from btcmonitor.ui import ascii_histogram, bucket_fee_rate, build_fee_buckets, gather_snapshot
 
 
 class FeeBucketTests(unittest.TestCase):
@@ -27,6 +27,37 @@ class FeeBucketTests(unittest.TestCase):
             if "█" in histogram.plain[span.start:span.end]
         ]
         self.assertEqual(bar_styles, ["blue", "green", "bright_red"])
+
+
+class BuildFeeBucketsTests(unittest.TestCase):
+    @staticmethod
+    def bucket_of(fee_sat, vsize=100):
+        buckets = build_fee_buckets({"tx": {"vsize": vsize, "fees": {"base": fee_sat / 1e8}}})
+        return next(label for label, vbytes in buckets if vbytes)
+
+    def test_rate_on_band_boundary_belongs_to_that_band(self):
+        for rate, expected in (
+            (1, "< 2  sat/vB"),
+            (2, "2+ sat/vB"),
+            (3, "3+ sat/vB"),
+            (5, "5+ sat/vB"),
+            (10, "10+ sat/vB"),
+            (20, "20+ sat/vB"),
+            (50, "50+ sat/vB"),
+            (100, "100+ sat/vB"),
+            (500, "500+ sat/vB"),
+            (1000, "1000+ sat/vB"),
+        ):
+            with self.subTest(rate=rate):
+                self.assertEqual(self.bucket_of(rate * 100), expected)
+
+    def test_rate_just_below_boundary_stays_in_lower_band(self):
+        self.assertEqual(self.bucket_of(199), "< 2  sat/vB")
+        self.assertEqual(self.bucket_of(1999), "10+ sat/vB")
+
+    def test_btc_float_conversion_does_not_lose_a_satoshi(self):
+        # 59 sat is 0.00000059 BTC, and 0.00000059 * 1e8 == 58.99999999999999
+        self.assertEqual(self.bucket_of(59 * 2, vsize=59), "2+ sat/vB")
 
 
 class BlockProjectionTests(unittest.TestCase):
@@ -101,12 +132,12 @@ class BlockProjectionTests(unittest.TestCase):
         self.assertEqual(projection.est_weight_vbytes, 1000000)
         self.assertEqual(
             projection.fee_buckets,
-            [("10+ sat/vB", 750000), ("3+ sat/vB", 250000)],
+            [("20+ sat/vB", 750000), ("3+ sat/vB", 250000)],
         )
         self.assertEqual(projection.est_tx, 4000)
         self.assertEqual(
             [tx.fee_rate for tx in projection.transactions],
-            [10] * 3000 + [3] * 1000,
+            [20] * 3000 + [3] * 1000,
         )
 
     def test_successful_block_template_uses_real_transactions(self):
