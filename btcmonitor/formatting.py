@@ -1,12 +1,24 @@
 """Text formatting helpers for the panels"""
 
 
-def format_bytes(num: float) -> str:
+def format_bytes(num: float, decimals: int = 0) -> str:
+    """Binary units; `decimals` applies from KB up"""
     for unit in ["B", "KB", "MB", "GB"]:
         if num < 1024:
-            return f"{num:.0f} {unit}"
+            return f"{num:.{decimals if unit != 'B' else 0}f} {unit}"
         num /= 1024
     return f"{num:.1f} TB"
+
+
+def format_rate(bytes_per_second: float) -> str:
+    """Transfer rate with one decimal, e.g. 312 B/s or 1.2 MB/s"""
+    if bytes_per_second < 1024:
+        return f"{bytes_per_second:.0f} B/s"
+    for unit in ["KB", "MB"]:
+        bytes_per_second /= 1024
+        if bytes_per_second < 1024:
+            return f"{bytes_per_second:.1f} {unit}/s"
+    return f"{bytes_per_second / 1024:.1f} GB/s"
 
 
 def format_txid(txid: str) -> str:

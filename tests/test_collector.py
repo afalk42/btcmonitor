@@ -22,6 +22,7 @@ class CollectorTestCase(unittest.TestCase):
         self.rpc.get_mempool_info.return_value = {}
         self.rpc.get_connection_count.return_value = 1
         self.rpc.get_peer_info.return_value = [{"inbound": False}]
+        self.rpc.get_net_totals.return_value = {"totalbytesrecv": 0, "totalbytessent": 0}
         self.rpc.get_raw_mempool.return_value = {}
         self.rpc.get_block_template.side_effect = RPCError(
             "{'code': -10, 'message': 'Bitcoin Core is in initial sync and waiting for blocks...'}"
@@ -204,6 +205,29 @@ class FeeEstimateTests(CollectorTestCase):
             self.collect()
             self.collect()
         self.assertEqual(self.rpc.estimate_smart_fee.call_count, 4)
+
+
+class NetworkTests(CollectorTestCase):
+    def test_traffic_rates_and_peer_summary(self):
+        self.rpc.get_peer_info.return_value = [
+            {"inbound": False, "connection_type": "outbound-full-relay", "transport_protocol_type": "v2"},
+            {"inbound": True, "connection_type": "inbound", "transport_protocol_type": "v1"},
+        ]
+        self.rpc.get_net_totals.return_value = {"totalbytesrecv": 1000, "totalbytessent": 100}
+        with patch("btcmonitor.collector.time.monotonic", return_value=1000.0):
+            self.assertIsNone(self.collect().network.recv_rate)
+        self.rpc.get_net_totals.return_value = {"totalbytesrecv": 21000, "totalbytessent": 2100}
+        with patch("btcmonitor.collector.time.monotonic", return_value=1010.0):
+            net = self.collect().network
+        self.assertEqual((net.recv_rate, net.send_rate), (2000.0, 200.0))
+        self.assertEqual((net.inbound, net.outbound, net.v2_peers), (1, 1, 1))
+        self.assertEqual(net.outbound_types, {"full": 1})
+
+    def test_net_totals_failure_leaves_other_data(self):
+        self.rpc.get_net_totals.side_effect = RPCError("boom")
+        data = self.collect()
+        self.assertIsNone(data.network)
+        self.assertIsNotNone(data.node)
 
 
 class RecentBlocksTests(CollectorTestCase):

@@ -6,6 +6,7 @@ A terminal dashboard (TUI) that monitors a local Bitcoin Core node using its JSO
 - Reads RPC credentials from the auth cookie or `bitcoin.conf`, with optional command-line overrides
 - Visualizes the following data about your bitcoin node in a dashboard:
   - Node health, blockchain height, peer information
+  - Network traffic, connection types, encrypted (v2) transport and peer client versions
   - Bitcoin price, block subsidy, # of blocks until next halving, time since last block
   - Mempool transaction count, memory size and fee histogram
   - Next block template as well as expected tx count, weight, and fee rate bands
@@ -87,6 +88,7 @@ The BTC price comes from the public [CoinGecko](https://www.coingecko.com/) API,
 ## Features
 - Node summary: block height, headers, verification progress, peers, mempool bytes/txs, difficulty
 - System stats: CPU, memory, swap, uptime, load average
+- Network: download/upload rate (10-second average), traffic since node start, outbound connection types, peers using BIP324 encrypted v2 transport, and the most common peer client
 - Mempool visualization: fee buckets with ASCII bars
 - Next block projection: approximate composition derived from `getblocktemplate` or mempool fees
 - Recent blocks: the last five blocks with height, age, transaction count, size, total fees and the mining pool read from the coinbase tag (best effort; unknown pools show their raw tag)
@@ -124,6 +126,7 @@ The tests run offline and do not require a Bitcoin Core node.
 | `collector.py` | Polls the node on a background thread and assembles `DashboardData` |
 | `transactions.py` | Background lookups for the largest-transactions list |
 | `blocks.py` | Recent blocks and mining pool tags |
+| `network.py` | Traffic rates and peer summaries |
 | `sync.py` | Sync speed and time-left estimates during initial block download |
 | `price.py` | Cached BTC/USD price |
 | `fees.py`, `chain.py`, `formatting.py` | Pure calculations: fee buckets, next-block projection, subsidy and halving, text formatting |

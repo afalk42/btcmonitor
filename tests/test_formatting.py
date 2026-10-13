@@ -6,6 +6,7 @@ from btcmonitor.formatting import (
     format_bytes,
     format_duration,
     format_fiat,
+    format_rate,
     format_time_since_block,
     format_txid,
 )
@@ -24,6 +25,9 @@ class FormattingTests(unittest.TestCase):
             with self.subTest(num=num):
                 self.assertEqual(format_bytes(num), expected)
 
+    def test_format_bytes_with_decimals(self):
+        self.assertEqual((format_bytes(512, 1), format_bytes(8.1 * 1024**3, 1)), ("512 B", "8.1 GB"))
+
     def test_format_txid(self):
         self.assertEqual(format_txid("abcdef0123456789"), "abcd...6789")
         self.assertEqual(format_txid("short"), "short")
@@ -40,6 +44,17 @@ class FormattingTests(unittest.TestCase):
         self.assertEqual(format_fiat(0.425, "eur", decimals=2), "€0.42")
         self.assertEqual(format_fiat(1234, "sek"), "1,234 SEK")
         self.assertEqual((fiat_label("usd"), fiat_label("eur")), ("US$", "EUR"))
+
+    def test_format_rate(self):
+        for rate, expected in (
+            (0, "0 B/s"),
+            (1023, "1023 B/s"),
+            (1536, "1.5 KB/s"),
+            (1.2 * 1024**2, "1.2 MB/s"),
+            (3 * 1024**3, "3.0 GB/s"),
+        ):
+            with self.subTest(rate=rate):
+                self.assertEqual(format_rate(rate), expected)
 
     def test_format_age(self):
         for seconds, expected in ((5, "<1m"), (59.9, "<1m"), (60, "1m"), (3599, "59m"), (3725, "1h 02m")):
