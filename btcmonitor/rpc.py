@@ -24,6 +24,7 @@ class RPCConfig:
     network: str = "mainnet"
     timeout: float = 5.0
     datadir: Optional[Path] = None
+    cookie_file: Optional[Path] = None  # rpccookiefile from bitcoin.conf; overrides the datadir's .cookie
 
 
 class BitcoinRPC:
@@ -32,14 +33,19 @@ class BitcoinRPC:
         self._url = f"http://{config.host}:{config.port}"
         self._auth_header = self._build_auth_header()
         self._auth_source: str = "basic" if (config.user and config.password) else "cookie"
-        self._cookie_path: Optional[Path] = discover_cookie_path(self.config.network, self.config.datadir)
+        self._cookie_path: Optional[Path] = self._find_cookie()
+
+    def _find_cookie(self) -> Optional[Path]:
+        if self.config.cookie_file is not None:
+            return self.config.cookie_file if self.config.cookie_file.exists() else None
+        return discover_cookie_path(self.config.network, self.config.datadir)
 
     def _build_auth_header(self) -> Dict[str, str]:
         if self.config.user and self.config.password:
             token = base64.b64encode(f"{self.config.user}:{self.config.password}".encode()).decode()
             return {"Authorization": f"Basic {token}"}
         # cookie auth
-        cookie_path = discover_cookie_path(self.config.network, self.config.datadir)
+        cookie_path = self._find_cookie()
         if cookie_path and cookie_path.exists():
             # Format is: user:token in one line
             content = Path(cookie_path).read_text().strip()
@@ -55,7 +61,7 @@ class BitcoinRPC:
             raise RPCError(str(e)) from e
         # If unauthorized with basic, retry once with cookie (if present)
         if resp.status_code == 401 and self._auth_source == "basic":
-            cookie_path = self._cookie_path or discover_cookie_path(self.config.network, self.config.datadir)
+            cookie_path = self._cookie_path or self._find_cookie()
             if cookie_path and cookie_path.exists():
                 content = Path(cookie_path).read_text().strip()
                 token = base64.b64encode(content.encode()).decode()
