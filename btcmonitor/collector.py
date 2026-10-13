@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 
+from .blocks import RecentBlocks
 from .chain import calculate_halving_info, get_current_subsidy
 from .fees import (
     FEE_ESTIMATE_TARGETS,
@@ -13,7 +14,16 @@ from .fees import (
     project_block_from_buckets,
     project_block_from_template,
 )
-from .models import BitcoinInfo, BlockProjection, DashboardData, FeeBuckets, MempoolView, NodeSnapshot, SyncProgress
+from .models import (
+    BitcoinInfo,
+    BlockProjection,
+    DashboardData,
+    FeeBuckets,
+    MempoolView,
+    NodeSnapshot,
+    RecentBlock,
+    SyncProgress,
+)
 from .price import PriceFeed
 from .rpc import BitcoinRPC, RPCError
 from .sync import SyncRate
@@ -42,6 +52,7 @@ class Collector:
         self.price_feed = price_feed or PriceFeed()
         self.tracker = tracker or TransactionTracker(rpc)
         self.sync_rate = SyncRate()
+        self.recent_blocks = RecentBlocks(rpc)
         # Replaced wholesale after each cycle; readers on other threads just take the reference
         self.latest = DashboardData()
 
@@ -55,6 +66,7 @@ class Collector:
         self._mempool_height: int | None = None
         self._best_hash: str | None = None
         self._best_time: int | None = None
+        self._recent: list[RecentBlock] | None = None
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -145,6 +157,8 @@ class Collector:
                 size_on_disk=bi.get("size_on_disk"),
                 pruned=bool(bi.get("pruned", False)),
             )
+        # Not needed while syncing (the sync view replaces those panels), and cheap once cached
+        recent_blocks = None if node.initial_block_download else self._update_recent_blocks(height)
         return DashboardData(
             node=node,
             mempool=mempool,
@@ -152,6 +166,7 @@ class Collector:
             bitcoin=bitcoin,
             sync=sync,
             fee_estimates=self._fee_estimates,
+            recent_blocks=recent_blocks,
         )
 
     def _refresh_mempool(self, height: int) -> None:
@@ -170,6 +185,15 @@ class Collector:
             return estimate_to_sat_per_vbyte(self.rpc.estimate_smart_fee(target))
         except RPCError:
             return None
+
+    def _update_recent_blocks(self, height: int) -> list[RecentBlock] | None:
+        """Recent blocks ending at the best block _last_block_time found; the previous list on failure"""
+        if self._best_hash is not None:
+            try:
+                self._recent = self.recent_blocks.update(self._best_hash, height)
+            except Exception:
+                pass  # e.g. a block pruned or reorged away mid-lookup; try again next cycle
+        return self._recent
 
     def _last_block_time(self, blockchain_info: dict) -> int | None:
         """Timestamp of the best block, fetched only when the best block changes"""

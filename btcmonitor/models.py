@@ -80,6 +80,17 @@ class BitcoinInfo:
 
 
 @dataclass
+class RecentBlock:
+    height: int
+    hash: str
+    time: int  # unix timestamp from the block header
+    tx_count: int  # including the coinbase
+    size: int  # bytes
+    total_fee_btc: float
+    miner: str  # best-effort pool name from the coinbase tag
+
+
+@dataclass
 class DashboardData:
     """Everything one collection cycle produced; `error` is set instead when the node could not be read"""
 
@@ -90,4 +101,5 @@ class DashboardData:
     sync: SyncProgress | None = None  # set only during initial block download
     # sat/vB per confirmation target in blocks; None where the node has too little data
     fee_estimates: dict[int, float | None] | None = None
+    recent_blocks: list[RecentBlock] | None = None  # newest first
     error: str | None = None

@@ -9,12 +9,12 @@ from btcmonitor.models import (
     MempoolTransaction,
     MempoolView,
     NodeSnapshot,
+    RecentBlock,
     SyncProgress,
     Transaction,
 )
 from btcmonitor.panels import (
     ascii_histogram,
-    block_grid_size,
     fee_estimates_line,
     format_fee_rate,
     get_bitcoin_info_panel,
@@ -22,6 +22,7 @@ from btcmonitor.panels import (
     get_mempool_panel,
     get_node_panel,
     get_projection_panel,
+    get_recent_blocks_panel,
     get_sync_panel,
     get_top_transactions_panel,
     max_transaction_scroll,
@@ -141,7 +142,7 @@ class OtherPanelTests(unittest.TestCase):
             transactions=[Transaction(10.0, 250, "a"), Transaction(2.0, 250, "b")],
             fee_buckets=[],
         )
-        text = render(get_projection_panel(proj, terminal_width=120, terminal_height=40))
+        text = render(get_projection_panel(proj, panel_width=60, panel_height=30))
         self.assertIn("Transactions: 2 | Size: 500 B", text)
         self.assertIn("Fee: 2.0-10.0 (avg: 6.0) sat/vB", text)
         self.assertIn("100+ ", text)
@@ -199,19 +200,33 @@ class FeeEstimatePanelTests(unittest.TestCase):
             (format_fee_rate(1.012), format_fee_rate(9.999), format_fee_rate(25.04)), ("1.01", "10.00", "25.0")
         )
 
-    def test_projection_panel_shows_estimates_and_keeps_legend(self):
+    def test_projection_panel_fills_its_height_with_estimates_and_legend(self):
         proj = BlockProjection(1, 250, [Transaction(3.0, 250, "a")], [])
         estimates = {2: 3.0, 3: 2.5, 6: 2.0, 144: 1.0}
-        for width in (100, 140):
-            with self.subTest(width=width):
-                console = Console(file=io.StringIO(), width=width // 2, height=30, record=True, color_system=None)
-                console.print(get_projection_panel(proj, width, 45, estimates), height=30)
-                text = console.export_text()
-                self.assertIn("1 day 1.00", text.replace("\n", " ").replace("│", " ").replace("  ", " "))
-                self.assertIn("Fee Legend", text)  # the grid left room for the legend
+        for panel_width, panel_height in ((70, 30), (50, 30), (70, 16)):
+            with self.subTest(width=panel_width, height=panel_height):
+                text = render(get_projection_panel(proj, panel_width, panel_height, estimates), width=panel_width)
+                lines = text.splitlines()
+                self.assertEqual(len(lines), panel_height)  # grid sized to fit exactly, nothing cropped
+                self.assertIn("1 day 1.00", " ".join(line.strip("│ ") for line in lines))
+                self.assertIn("Fee Legend", text)
+                self.assertTrue(lines[-1].startswith("╰"))
 
-    def test_wrapped_estimates_take_grid_rows(self):
-        self.assertEqual(block_grid_size(140, 45, 1)[1], block_grid_size(140, 45, 0)[1] - 1)
+
+class RecentBlocksPanelTests(unittest.TestCase):
+    def test_rows(self):
+        blocks = [
+            RecentBlock(971274, "aa", 1000, 4424, 1609728, 0.02001125, "F2Pool"),
+            RecentBlock(971273, "bb", 400, 3100, 1200000, 0.015, "Foundry USA"),
+        ]
+        text = render(get_recent_blocks_panel(blocks, now=1030), width=70)
+        self.assertIn("Recent Blocks", text)
+        for expected in ("971,274", "<1m", "4,424", "1.61 MB", "0.0200", "F2Pool", "971,273", "10m", "Foundry USA"):
+            self.assertIn(expected, text)
+        self.assertLess(text.index("971,274"), text.index("971,273"))
+
+    def test_no_blocks_yet(self):
+        self.assertIn("…", render(get_recent_blocks_panel(None)))
 
 
 class BlockGridTests(unittest.TestCase):

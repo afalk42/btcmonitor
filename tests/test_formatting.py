@@ -1,6 +1,6 @@
 import unittest
 
-from btcmonitor.formatting import format_bytes, format_duration, format_time_since_block, format_txid
+from btcmonitor.formatting import format_age, format_bytes, format_duration, format_time_since_block, format_txid
 
 
 class FormattingTests(unittest.TestCase):
@@ -26,6 +26,11 @@ class FormattingTests(unittest.TestCase):
         self.assertEqual(format_time_since_block(3599), "59:59")
         self.assertEqual(format_time_since_block(3725), "1h 02m")
         self.assertEqual(format_time_since_block(8253680 * 60), "5731d 17h")
+
+    def test_format_age(self):
+        for seconds, expected in ((5, "<1m"), (59.9, "<1m"), (60, "1m"), (3599, "59m"), (3725, "1h 02m")):
+            with self.subTest(seconds=seconds):
+                self.assertEqual(format_age(seconds), expected)
 
     def test_format_duration(self):
         for seconds, expected in (

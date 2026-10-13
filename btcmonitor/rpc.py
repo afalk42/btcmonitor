@@ -143,8 +143,17 @@ class BitcoinRPC:
     def get_block(self, block_hash: str, verbosity: int = 1) -> dict[str, Any]:
         return self.call("getblock", block_hash, verbosity)
 
-    def get_raw_transaction(self, txid: str, verbose: bool = False) -> Any:
+    def get_raw_transaction(self, txid: str, verbose: bool = False, block_hash: str | None = None) -> Any:
+        # With block_hash, transactions in that block can be looked up without -txindex
+        if block_hash:
+            return self.call("getrawtransaction", txid, verbose, block_hash)
         return self.call("getrawtransaction", txid, verbose)
+
+    def get_block_hash(self, height: int) -> str:
+        return self.call("getblockhash", height)
+
+    def get_block_stats(self, height: int, stats: list[str]) -> dict[str, Any]:
+        return self.call("getblockstats", height, stats)
 
     def get_peer_info(self) -> Any:
         return self.call("getpeerinfo")

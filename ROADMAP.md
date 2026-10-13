@@ -8,7 +8,7 @@ Candidate features for btcmonitor, roughly in order of value. Each item is meant
 
 2. ✅ *2026-10-13* — **Fee estimates.** Show `estimatesmartfee` results for 1, 3, 6 and 144 blocks, so the dashboard answers "what fee should I pay right now?".
 
-3. **Recent blocks panel.** List the last few blocks with height, age, transaction count, size, total fees and the miner tag from the coinbase.
+3. ✅ *2026-10-13* — **Recent blocks panel.** List the last few blocks with height, age, transaction count, size, total fees and the miner tag from the coinbase.
 
 4. **Price privacy and currency options.** The price lookup sends a request to CoinGecko from the node's IP address about once a minute, which node operators may not want. Add `--no-price` to turn it off, and a currency option for non-USD prices.
 

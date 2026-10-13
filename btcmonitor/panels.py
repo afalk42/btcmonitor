@@ -2,19 +2,29 @@
 
 from __future__ import annotations
 
+import io
 import time
 from datetime import UTC, datetime
 
 import psutil
 from rich.box import ROUNDED
-from rich.console import Group
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
 from .fees import bucket_fee_rate
-from .formatting import format_bytes, format_duration, format_time_since_block, format_txid
-from .models import BitcoinInfo, BlockProjection, FeeBuckets, MempoolView, NodeSnapshot, SyncProgress, Transaction
+from .formatting import format_age, format_bytes, format_duration, format_time_since_block, format_txid
+from .models import (
+    BitcoinInfo,
+    BlockProjection,
+    FeeBuckets,
+    MempoolView,
+    NodeSnapshot,
+    RecentBlock,
+    SyncProgress,
+    Transaction,
+)
 
 # Colors for fee rates, highest threshold (sat/vB) first; anything lower is blue
 FEE_COLORS = [
@@ -25,6 +35,9 @@ FEE_COLORS = [
     (5, "bright_green"),
     (2, "green"),
 ]
+
+# Throwaway console used only to measure how text wraps
+_MEASURE = Console(file=io.StringIO(), width=200)
 
 # Hide the Fee US$ column when the terminal is narrower than this
 FEE_USD_MIN_TERMINAL_WIDTH = 114
@@ -217,14 +230,6 @@ def render_block_grid(transactions: list[Transaction], width: int, height: int) 
     return text
 
 
-def block_grid_size(terminal_width: int, terminal_height: int, extra_lines: int = 0) -> tuple[int, int]:
-    """Grid cells that fit the projection panel: about half the width and 2/3 of the height,
-    less room for borders, the summary lines and the legend, and `extra_lines` more"""
-    width = max(20, min(80, (terminal_width // 2) - 6))
-    height = max(6, min(40, (2 * terminal_height // 3) - 8 - extra_lines))
-    return width, height
-
-
 def format_fee_rate(sat_per_vbyte: float) -> str:
     """Two decimals below 10 sat/vB, where 1.00 vs 1.01 matters; one above"""
     return f"{sat_per_vbyte:.2f}" if sat_per_vbyte < 10 else f"{sat_per_vbyte:.1f}"
@@ -251,39 +256,79 @@ def fee_estimates_line(estimates: dict[int, float | None] | None) -> Text:
     return text
 
 
+def text_height(text: Text, width: int) -> int:
+    """Lines `text` takes when wrapped to `width` columns, not counting a trailing newline"""
+    text = text.copy()
+    text.rstrip()
+    return len(text.wrap(_MEASURE, max(1, width)))
+
+
+def fee_legend() -> Text:
+    text = Text("Fee Legend: ")
+    for threshold, color in FEE_COLORS:
+        text.append("█", style=color)
+        text.append(f"{threshold}+ ")
+    text.append("█", style="blue")
+    text.append("<2 sat/vB")
+    return text
+
+
 def get_projection_panel(
     proj: BlockProjection | None,
-    terminal_width: int,
-    terminal_height: int,
+    panel_width: int,
+    panel_height: int,
     fee_estimates: dict[int, float | None] | None = None,
 ) -> Panel:
     if not proj:
         return Panel(Text("…"), title="Next Block Template", box=ROUNDED)
 
-    text = Text()
-    text.append(f"Transactions: {proj.est_tx:,} | Size: {format_bytes(proj.est_weight_vbytes)}\n")
-    estimates = fee_estimates_line(fee_estimates)
-    text.append(estimates)
-    # Lines the estimate takes once wrapped to the panel (about half the terminal, less borders)
-    estimate_lines = -(-len(estimates.plain.rstrip()) // max(1, terminal_width // 2 - 4))
+    inner_width = panel_width - 4  # borders and padding
+    header = Text(f"Transactions: {proj.est_tx:,} | Size: {format_bytes(proj.est_weight_vbytes)}\n")
+    header.append(fee_estimates_line(fee_estimates))
+    if not proj.transactions:
+        header.append("\nNo transaction data available")
+        return Panel(header, title="Next Block Template", box=ROUNDED)
 
-    if proj.transactions:
-        fee_rates = [tx.fee_rate for tx in proj.transactions]
-        avg_fee = sum(fee_rates) / len(fee_rates)
-        text.append(f"Fee: {min(fee_rates):.1f}-{max(fee_rates):.1f} (avg: {avg_fee:.1f}) sat/vB\n\n")
-        grid_size = block_grid_size(terminal_width, terminal_height, estimate_lines)
-        text.append(render_block_grid(proj.transactions, *grid_size))
+    fee_rates = [tx.fee_rate for tx in proj.transactions]
+    avg_fee = sum(fee_rates) / len(fee_rates)
+    header.append(f"Fee: {min(fee_rates):.1f}-{max(fee_rates):.1f} (avg: {avg_fee:.1f}) sat/vB\n")
+    legend = fee_legend()
 
-        text.append("\nFee Legend: ")
-        for threshold, color in FEE_COLORS:
-            text.append("█", style=color)
-            text.append(f"{threshold}+ ")
-        text.append("█", style="blue")
-        text.append("<2 sat/vB")
-    else:
-        text.append("\nNo transaction data available")
+    # The grid gets whatever height the text leaves: borders, header, a blank line on either side, legend
+    used = 2 + text_height(header, inner_width) + 2 + text_height(legend, inner_width)
+    grid_width = max(20, min(80, inner_width - 2))
+    grid_height = max(3, min(40, panel_height - used))
 
+    text = header
+    text.append("\n")
+    text.append(render_block_grid(proj.transactions, grid_width, grid_height))
+    text.append("\n")
+    text.append(legend)
     return Panel(text, title="Next Block Template", box=ROUNDED)
+
+
+def get_recent_blocks_panel(blocks: list[RecentBlock] | None, now: float | None = None) -> Panel:
+    title = "Recent Blocks"
+    if not blocks:
+        return Panel(Text("…"), title=title, box=ROUNDED)
+    now = now if now is not None else time.time()
+    table = Table(show_header=True, header_style="bold cyan", box=None, pad_edge=False, expand=True)
+    table.add_column("Height", style="bold")
+    table.add_column("Age", justify="right")
+    table.add_column("Txs", justify="right")
+    table.add_column("Size", justify="right")
+    table.add_column("Fees BTC", style="orange1", justify="right")
+    table.add_column("Miner", style="yellow", no_wrap=True, overflow="ellipsis")
+    for block in blocks:
+        table.add_row(
+            f"{block.height:,}",
+            format_age(now - block.time),
+            f"{block.tx_count:,}",
+            f"{block.size / 1e6:.2f} MB",  # block sizes are customarily decimal megabytes
+            f"{block.total_fee_btc:.4f}",
+            block.miner,
+        )
+    return Panel(table, title=title, box=ROUNDED)
 
 
 def progress_bar(fraction: float, width: int) -> Text:

@@ -17,6 +17,7 @@ from .panels import (
     get_mempool_panel,
     get_node_panel,
     get_projection_panel,
+    get_recent_blocks_panel,
     get_sync_panel,
     get_system_panel,
     get_top_transactions_panel,
@@ -26,6 +27,7 @@ from .rpc import BitcoinRPC
 
 TOP_ROW_HEIGHT = 7
 MEMPOOL_PANEL_HEIGHT = 15  # title + histogram + borders
+RECENT_BLOCKS_PANEL_HEIGHT = 8  # header + five blocks + borders
 
 
 def build_layout() -> Layout:
@@ -43,7 +45,11 @@ def build_layout() -> Layout:
     )
     layout["bottom"].split_row(
         Layout(name="left"),
+        Layout(name="right"),
+    )
+    layout["right"].split_column(
         Layout(name="projection"),
+        Layout(name="recent_blocks", size=RECENT_BLOCKS_PANEL_HEIGHT),
     )
     # Mempool has fixed content; the transactions list takes the remaining height
     layout["left"].split_column(
@@ -123,7 +129,11 @@ class Dashboard:
             self.layout["top_transactions"].update(
                 get_top_transactions_panel(data.mempool, price, width, transactions_height, scroll_offset)
             )
-            self.layout["projection"].update(get_projection_panel(data.projection, width, height, data.fee_estimates))
+            projection_height = height - TOP_ROW_HEIGHT - RECENT_BLOCKS_PANEL_HEIGHT
+            self.layout["projection"].update(
+                get_projection_panel(data.projection, width // 2, projection_height, data.fee_estimates)
+            )
+            self.layout["recent_blocks"].update(get_recent_blocks_panel(data.recent_blocks))
 
             syncing = data.sync is not None
             self.layout["bottom"].visible = not syncing
