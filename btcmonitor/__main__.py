@@ -12,21 +12,33 @@ from .ui import render_dashboard
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(
-        prog="btcmonitor", 
-        description="Terminal Bitcoin Core monitor. Use arrow keys to scroll transactions. Press 'q' to quit or use Ctrl-C."
+        prog="btcmonitor",
+        description="Terminal Bitcoin Core monitor. Use arrow keys to scroll transactions. Press 'q' to quit or use Ctrl-C.",
     )
     p.add_argument("--rpc-host", default=os.getenv("BITCOIN_RPC_HOST", "127.0.0.1"))
     env_port = os.getenv("BITCOIN_RPC_PORT")
-    p.add_argument("--rpc-port", type=int, default=int(env_port) if env_port else None,
-                   help="RPC port (default: the network's standard port, e.g. 8332 for mainnet)")
+    p.add_argument(
+        "--rpc-port",
+        type=int,
+        default=int(env_port) if env_port else None,
+        help="RPC port (default: the network's standard port, e.g. 8332 for mainnet)",
+    )
     p.add_argument("--rpc-user", default=os.getenv("BITCOIN_RPC_USER"))
     p.add_argument("--rpc-password", default=os.getenv("BITCOIN_RPC_PASSWORD"))
     p.add_argument("--network", default=os.getenv("BITCOIN_NETWORK", "mainnet"), choices=list(DEFAULT_RPC_PORTS))
-    p.add_argument("--datadir", type=Path, default=os.getenv("BITCOIN_DATADIR"),
-                   help="Bitcoin Core data directory, used to find the auth cookie (default: platform default)")
-    p.add_argument("--conf", type=Path, default=os.getenv("BITCOIN_CONF"),
-                   help="bitcoin.conf to read rpcuser, rpcpassword, rpcport, rpccookiefile and datadir from "
-                        "(default: bitcoin.conf in the data directory)")
+    p.add_argument(
+        "--datadir",
+        type=Path,
+        default=os.getenv("BITCOIN_DATADIR"),
+        help="Bitcoin Core data directory, used to find the auth cookie (default: platform default)",
+    )
+    p.add_argument(
+        "--conf",
+        type=Path,
+        default=os.getenv("BITCOIN_CONF"),
+        help="bitcoin.conf to read rpcuser, rpcpassword, rpcport, rpccookiefile and datadir from "
+        "(default: bitcoin.conf in the data directory)",
+    )
     p.add_argument("--refresh", type=float, default=2.0, help="Refresh rate in Hz (default 2)")
     return p.parse_args(argv)
 

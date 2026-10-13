@@ -73,7 +73,6 @@ class CookieAuthTests(unittest.TestCase):
         self.assertEqual(node.calls, 1)
 
 
-
 class ResponseParsingTests(unittest.TestCase):
     def call_with_response(self, **attrs):
         response = Mock(status_code=200, **attrs)

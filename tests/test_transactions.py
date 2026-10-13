@@ -52,7 +52,6 @@ class TransactionCacheTests(unittest.TestCase):
         self.wait_for_background_load()
         self.assertEqual(len(ui.fetch_top_transactions(rpc, mempool, 1)), 100)
 
-
     def test_every_transaction_in_a_large_mempool_is_looked_up(self):
         # More transactions than the old 20,000 initial-load cap, which silently skipped the rest
         rpc = fake_rpc()

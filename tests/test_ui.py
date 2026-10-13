@@ -29,13 +29,8 @@ class FeeBucketTests(unittest.TestCase):
                 self.assertEqual(bucket_fee_rate(label), expected)
 
     def test_histogram_preserves_fee_colors(self):
-        histogram = ascii_histogram(
-            [("< 2  sat/vB", 250), ("2+ sat/vB", 250), ("1000+ sat/vB", 250)]
-        )
-        bar_styles = [
-            span.style for span in histogram.spans
-            if "█" in histogram.plain[span.start:span.end]
-        ]
+        histogram = ascii_histogram([("< 2  sat/vB", 250), ("2+ sat/vB", 250), ("1000+ sat/vB", 250)])
+        bar_styles = [span.style for span in histogram.spans if "█" in histogram.plain[span.start : span.end]]
         self.assertEqual(bar_styles, ["blue", "green", "bright_red"])
 
 
@@ -85,8 +80,7 @@ class SnapshotTestCase(unittest.TestCase):
         self.rpc.get_peer_info.return_value = [{"inbound": False}]
         self.rpc.get_raw_mempool.return_value = {}
         self.rpc.get_block_template.side_effect = RPCError(
-            "{'code': -10, 'message': 'Bitcoin Core is in initial sync "
-            "and waiting for blocks...'}"
+            "{'code': -10, 'message': 'Bitcoin Core is in initial sync and waiting for blocks...'}"
         )
         self.rpc.get_block.return_value = {"time": 1700000000}
         # Keep price HTTP requests and background transaction fetching offline.
@@ -121,8 +115,7 @@ class BlockProjectionTests(SnapshotTestCase):
         self.rpc.get_raw_mempool.return_value = {
             str(index): {"vsize": 250, "fees": {"base": fee_btc}}
             for index, fee_btc in enumerate(
-                [0.0000025, 0.00000625, 0.00001, 0.00002, 0.0000375,
-                 0.000075, 0.0001875, 0.000625, 0.001875, 0.00375]
+                [0.0000025, 0.00000625, 0.00001, 0.00002, 0.0000375, 0.000075, 0.0001875, 0.000625, 0.001875, 0.00375]
             )
         }
         projection = self.projection()
@@ -175,7 +168,6 @@ class BlockProjectionTests(SnapshotTestCase):
         self.assertEqual(buckets["50+ sat/vB"], 200)
         self.assertEqual(buckets["3+ sat/vB"], 100)
         self.assertEqual(sum(buckets.values()), 300)
-
 
 
 class UnexpectedErrorTests(SnapshotTestCase):

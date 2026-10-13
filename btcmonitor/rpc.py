@@ -4,7 +4,7 @@ import base64
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import requests
 
@@ -19,27 +19,27 @@ class RPCError(Exception):
 class RPCConfig:
     host: str = "127.0.0.1"
     port: int = 8332
-    user: Optional[str] = None
-    password: Optional[str] = None
+    user: str | None = None
+    password: str | None = None
     network: str = "mainnet"
     timeout: float = 5.0
-    datadir: Optional[Path] = None
-    cookie_file: Optional[Path] = None  # rpccookiefile from bitcoin.conf; overrides the datadir's .cookie
+    datadir: Path | None = None
+    cookie_file: Path | None = None  # rpccookiefile from bitcoin.conf; overrides the datadir's .cookie
 
 
 class BitcoinRPC:
     def __init__(self, config: RPCConfig):
         self.config = config
         self._url = f"http://{config.host}:{config.port}"
-        self._cookie_path: Optional[Path] = None
+        self._cookie_path: Path | None = None
         self._auth_header = self._build_auth_header()
 
-    def _find_cookie(self) -> Optional[Path]:
+    def _find_cookie(self) -> Path | None:
         if self.config.cookie_file is not None:
             return self.config.cookie_file if self.config.cookie_file.exists() else None
         return discover_cookie_path(self.config.network, self.config.datadir)
 
-    def _read_cookie_header(self) -> Dict[str, str]:
+    def _read_cookie_header(self) -> dict[str, str]:
         """Auth header from the current cookie file, or {} if there is none"""
         self._cookie_path = self._find_cookie()
         if not self._cookie_path:
@@ -52,16 +52,20 @@ class BitcoinRPC:
         token = base64.b64encode(content.encode()).decode()
         return {"Authorization": f"Basic {token}"}
 
-    def _build_auth_header(self) -> Dict[str, str]:
+    def _build_auth_header(self) -> dict[str, str]:
         if self.config.user and self.config.password:
             token = base64.b64encode(f"{self.config.user}:{self.config.password}".encode()).decode()
             return {"Authorization": f"Basic {token}"}
         return self._read_cookie_header()
 
-    def _post(self, payload: Dict[str, Any], auth_header: Dict[str, str]) -> requests.Response:
+    def _post(self, payload: dict[str, Any], auth_header: dict[str, str]) -> requests.Response:
         try:
-            return requests.post(self._url, headers={"Content-Type": "application/json", **auth_header},
-                                 data=json.dumps(payload), timeout=self.config.timeout)
+            return requests.post(
+                self._url,
+                headers={"Content-Type": "application/json", **auth_header},
+                data=json.dumps(payload),
+                timeout=self.config.timeout,
+            )
         except requests.RequestException as e:
             raise RPCError(str(e)) from e
 
@@ -78,8 +82,14 @@ class BitcoinRPC:
                     self._auth_header = cookie_header
         if resp.status_code == 401:
             target = f"http://{self.config.host}:{self.config.port}"
-            cookie_note = f" cookie at {self._cookie_path}" if (self._cookie_path and self._cookie_path.exists()) else " cookie (not found)"
-            raise RPCError(f"Unauthorized to {target}: check rpcuser/rpcpassword or rpcauth, or{cookie_note} for this network ({self.config.network}).")
+            cookie_note = (
+                f" cookie at {self._cookie_path}"
+                if (self._cookie_path and self._cookie_path.exists())
+                else " cookie (not found)"
+            )
+            raise RPCError(
+                f"Unauthorized to {target}: check rpcuser/rpcpassword or rpcauth, or{cookie_note} for this network ({self.config.network})."
+            )
         if resp.status_code >= 400:
             raise RPCError(f"HTTP {resp.status_code}: {resp.text}")
         try:
@@ -93,10 +103,10 @@ class BitcoinRPC:
         return data.get("result")
 
     # Convenience wrappers
-    def get_blockchain_info(self) -> Dict[str, Any]:
+    def get_blockchain_info(self) -> dict[str, Any]:
         return self.call("getblockchaininfo")
 
-    def get_mempool_info(self) -> Dict[str, Any]:
+    def get_mempool_info(self) -> dict[str, Any]:
         return self.call("getmempoolinfo")
 
     def get_mempool_ancestors(self, txid: str, verbose: bool = False) -> Any:
@@ -105,23 +115,23 @@ class BitcoinRPC:
     def get_raw_mempool(self, verbose: bool = True) -> Any:
         return self.call("getrawmempool", verbose)
 
-    def get_network_info(self) -> Dict[str, Any]:
+    def get_network_info(self) -> dict[str, Any]:
         return self.call("getnetworkinfo")
 
     def get_connection_count(self) -> int:
         return self.call("getconnectioncount")
 
-    def get_block_template(self) -> Dict[str, Any]:
+    def get_block_template(self) -> dict[str, Any]:
         return self.call("getblocktemplate", {"rules": ["segwit"]})
-    
+
     def get_best_block_hash(self) -> str:
         return self.call("getbestblockhash")
-    
-    def get_block(self, block_hash: str, verbosity: int = 1) -> Dict[str, Any]:
+
+    def get_block(self, block_hash: str, verbosity: int = 1) -> dict[str, Any]:
         return self.call("getblock", block_hash, verbosity)
-    
+
     def get_raw_transaction(self, txid: str, verbose: bool = False) -> Any:
         return self.call("getrawtransaction", txid, verbose)
-    
+
     def get_peer_info(self) -> Any:
         return self.call("getpeerinfo")

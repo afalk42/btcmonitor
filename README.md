@@ -94,6 +94,7 @@ After installing the project with its development extras in your virtual environ
 pip install -e ".[dev]"
 python -m unittest discover -v
 ruff check .
+ruff format --check .
 ```
 
 The tests run offline and do not require a Bitcoin Core node. GitHub Actions runs the same checks on every push and pull request.

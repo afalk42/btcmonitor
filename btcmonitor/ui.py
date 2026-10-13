@@ -6,7 +6,6 @@ import time
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
 
 import psutil
 import readchar
@@ -41,15 +40,16 @@ class MempoolView:
     total_vbytes: int
     usage_mb: float
     maxmempool_mb: float
-    fee_buckets: List[Tuple[str, int]]  # label, vbytes
-    top_transactions: List[MempoolTransaction]  # sorted by amount descending
+    fee_buckets: list[tuple[str, int]]  # label, vbytes
+    top_transactions: list[MempoolTransaction]  # sorted by amount descending
 
 
-@dataclass  
+@dataclass
 class Transaction:
     fee_rate: float  # sat/vB
     vbytes: int
     txid: str
+
 
 @dataclass
 class MempoolTransaction:
@@ -58,20 +58,22 @@ class MempoolTransaction:
     fee_btc: float
     fee_rate: float  # sat/vB
 
+
 @dataclass
 class BlockProjection:
     est_tx: int
     est_weight_vbytes: int
-    transactions: List[Transaction]
-    fee_buckets: List[Tuple[str, int]]  # label, vbytes
+    transactions: list[Transaction]
+    fee_buckets: list[tuple[str, int]]  # label, vbytes
+
 
 @dataclass
 class BitcoinInfo:
-    price_usd: Optional[float]
+    price_usd: float | None
     current_subsidy: float
     blocks_until_halving: int
-    estimated_halving_date: Optional[str]
-    time_since_last_block: Optional[int]  # seconds since last block
+    estimated_halving_date: str | None
+    time_since_last_block: int | None  # seconds since last block
 
 
 def format_bytes(num: int) -> str:
@@ -81,11 +83,13 @@ def format_bytes(num: int) -> str:
         num /= 1024
     return f"{num:.1f} TB"
 
+
 def format_txid(txid: str) -> str:
     """Format transaction ID as first4...last4"""
     if len(txid) >= 8:
         return f"{txid[:4]}...{txid[-4:]}"
     return txid
+
 
 def format_time_since_block(seconds: int) -> str:
     """Format seconds into minutes:seconds format"""
@@ -93,84 +97,91 @@ def format_time_since_block(seconds: int) -> str:
     remaining_seconds = seconds % 60
     return f"{minutes}:{remaining_seconds:02d}"
 
+
 def get_current_subsidy(block_height: int) -> float:
     """Calculate current block subsidy based on block height"""
     subsidy = 50.0  # Initial subsidy
     halvings = block_height // 210_000
-    return subsidy / (2 ** halvings)
+    return subsidy / (2**halvings)
 
-def calculate_halving_info(block_height: int) -> Tuple[int, Optional[str]]:
+
+def calculate_halving_info(block_height: int) -> tuple[int, str | None]:
     """Calculate blocks until next halving and estimated date"""
     HALVING_INTERVAL = 210_000
     BLOCK_TIME_MINUTES = 10  # Average block time
-    
+
     next_halving_block = ((block_height // HALVING_INTERVAL) + 1) * HALVING_INTERVAL
     blocks_until_halving = next_halving_block - block_height
-    
+
     # Estimate date (approximate)
     minutes_until_halving = blocks_until_halving * BLOCK_TIME_MINUTES
     estimated_date = datetime.now() + timedelta(minutes=minutes_until_halving)
     date_str = estimated_date.strftime("%Y-%m-%d")
-    
+
     return blocks_until_halving, date_str
 
+
 # Global price cache
-_price_cache: Dict[str, float] = {}
+_price_cache: dict[str, float] = {}
 _last_price_fetch = 0.0
 PRICE_CACHE_DURATION = 60.0  # 60 seconds
 
-def fetch_bitcoin_price() -> Optional[float]:
+
+def fetch_bitcoin_price() -> float | None:
     """Fetch Bitcoin price from a public API with caching"""
     global _price_cache, _last_price_fetch
-    
+
     current_time = time.time()
-    
+
     # Check if we have a cached price that's less than 60 seconds old
     if (current_time - _last_price_fetch) < PRICE_CACHE_DURATION and "btc_usd" in _price_cache:
         return _price_cache["btc_usd"]
-    
+
     try:
         # Using CoinGecko API (no auth required)
         url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
         with urllib.request.urlopen(url, timeout=3) as response:
             data = json.loads(response.read())
             price = float(data["bitcoin"]["usd"])
-            
+
             # Update cache
             _price_cache["btc_usd"] = price
             _last_price_fetch = current_time
-            
+
             return price
     except Exception:
         # If API fails, return cached price if available
         return _price_cache.get("btc_usd", None)
 
 
-def get_bitcoin_info_panel(info: Optional[BitcoinInfo]) -> Panel:
+def get_bitcoin_info_panel(info: BitcoinInfo | None) -> Panel:
     table = Table.grid(padding=(0, 1))
     table.add_column(justify="right", style="bold orange1")
     table.add_column()
-    
+
     if not info:
         return Panel(Text("Loading...", style="dim"), title="Bitcoin", box=ROUNDED)
-    
+
     price_str = f"${info.price_usd:,.0f}" if info.price_usd else "N/A"
     table.add_row("Price", price_str)
     table.add_row("Block Subsidy", f"{info.current_subsidy:.3f} BTC")
     table.add_row("To Next Halving", f"{info.blocks_until_halving:,} blocks")
     halving_date = info.estimated_halving_date or "Unknown"
     table.add_row("Est. Date", halving_date)
-    
-    time_since_str = format_time_since_block(info.time_since_last_block) if info.time_since_last_block is not None else "N/A"
+
+    time_since_str = (
+        format_time_since_block(info.time_since_last_block) if info.time_since_last_block is not None else "N/A"
+    )
     table.add_row("Since Last Block", time_since_str)
-    
+
     return Panel(table, title="Bitcoin", box=ROUNDED)
+
 
 def get_system_panel() -> Panel:
     cpu = psutil.cpu_percent(interval=None)
     mem = psutil.virtual_memory()
     swap = psutil.swap_memory()
-    
+
     # Get additional system info
     try:
         boot_time = psutil.boot_time()
@@ -178,9 +189,9 @@ def get_system_panel() -> Panel:
         uptime_hours = int(uptime_seconds // 3600)
         uptime_days = uptime_hours // 24
         uptime_hours = uptime_hours % 24
-        
+
         process_count = len(psutil.pids())
-        
+
         # Try to get load average (Unix/Linux/macOS)
         try:
             load_avg = psutil.getloadavg()[0]  # 1-minute load average
@@ -188,11 +199,11 @@ def get_system_panel() -> Panel:
         except (AttributeError, OSError):
             # Fallback for systems without load average
             load_info = f"Procs: {process_count}"
-            
+
     except Exception:
         uptime_days = uptime_hours = 0
         load_info = "N/A"
-    
+
     text = Text()
     text.append(f"CPU: {cpu:5.1f}%\n")
     text.append(f"RAM: {mem.percent:5.1f}% of {format_bytes(mem.total)}\n")
@@ -202,7 +213,7 @@ def get_system_panel() -> Panel:
     return Panel(text, title="System", box=ROUNDED)
 
 
-def get_node_panel(snap: Optional[NodeSnapshot], err: Optional[str]) -> Panel:
+def get_node_panel(snap: NodeSnapshot | None, err: str | None) -> Panel:
     table = Table.grid(padding=(0, 1))
     table.add_column(justify="right", style="bold cyan")
     table.add_column()
@@ -213,18 +224,18 @@ def get_node_panel(snap: Optional[NodeSnapshot], err: Optional[str]) -> Panel:
     table.add_row("Chain", snap.chain)
     table.add_row("Height", str(snap.height))
     table.add_row("Headers", str(snap.headers))
-    table.add_row("Verify", f"{snap.verification_progress*100:.2f}%")
-    
+    table.add_row("Verify", f"{snap.verification_progress * 100:.2f}%")
+
     # Show peer breakdown with inbound/outbound counts
     peer_info = f"{snap.peers} (In: {snap.inbound_peers} / Out: {snap.outbound_peers})"
     table.add_row("Peers", peer_info)
-    
+
     table.add_row("Mempool", f"{snap.mempool_tx} txs / {format_bytes(snap.mempool_bytes)}")
     table.add_row("Difficulty", f"{snap.difficulty:.4g}")
     return Panel(table, title="Bitcoin Core", box=ROUNDED)
 
 
-def build_fee_buckets(mempool: Dict[str, Dict]) -> List[Tuple[str, int]]:
+def build_fee_buckets(mempool: dict[str, dict]) -> list[tuple[str, int]]:
     # Fee rate buckets in sat/vB
     bands = [1, 2, 3, 5, 10, 20, 50, 100, 500, 1000]
     vbytes_per_band = [0 for _ in bands]
@@ -238,7 +249,7 @@ def build_fee_buckets(mempool: Dict[str, Dict]) -> List[Tuple[str, int]]:
         while idx < len(bands) - 1 and fr >= bands[idx + 1]:
             idx += 1
         vbytes_per_band[idx] += int(vsize)
-    labels: List[Tuple[str, int]] = []
+    labels: list[tuple[str, int]] = []
     for i, vb in enumerate(vbytes_per_band):
         lo = bands[i]
         if i == 0:
@@ -279,14 +290,17 @@ def get_fee_color(fee_rate: float) -> str:
     else:
         return "blue"
 
-def render_block_grid(transactions: List[Transaction], console: Console, panel_width: int = None, panel_height: int = None) -> Text:
+
+def render_block_grid(
+    transactions: list[Transaction], console: Console, panel_width: int = None, panel_height: int = None
+) -> Text:
     """Render block as a visual grid like mempool.space with dynamic sizing"""
     text = Text()
-    
+
     if not transactions:
         text.append("No transactions", style="dim")
         return text
-    
+
     # Calculate available dimensions
     if panel_width is None or panel_height is None:
         # Get terminal size and estimate panel size
@@ -299,10 +313,10 @@ def render_block_grid(transactions: List[Transaction], console: Console, panel_w
     else:
         width = max(20, min(80, panel_width - 6))
         height = max(6, min(40, panel_height - 8))
-    
+
     # Sort transactions by fee rate (highest first)
     sorted_txs = sorted(transactions, key=lambda t: t.fee_rate, reverse=True)
-    
+
     # Calculate grid dimensions - distribute transactions across cells
     total_cells = width * height
     if len(sorted_txs) > total_cells:
@@ -313,7 +327,7 @@ def render_block_grid(transactions: List[Transaction], console: Console, panel_w
         # Fewer transactions than cells - one transaction per cell
         tx_per_cell = 1
         remainder = 0
-    
+
     cell_idx = 0
     for row in range(height):
         for col in range(width):
@@ -330,10 +344,11 @@ def render_block_grid(transactions: List[Transaction], console: Console, panel_w
                 # Empty space in block
                 text.append("░", style="dim")
         text.append("\n")
-    
+
     return text
 
-def ascii_histogram(buckets: List[Tuple[str, int]], max_width: int = 40) -> Text:
+
+def ascii_histogram(buckets: list[tuple[str, int]], max_width: int = 40) -> Text:
     text = Text()
     max_vb = max((vb for _, vb in buckets), default=1)
     for label, vb in buckets:
@@ -342,11 +357,11 @@ def ascii_histogram(buckets: List[Tuple[str, int]], max_width: int = 40) -> Text
         else:
             # Calculate bar length, then ensure minimum of 1 for non-zero values
             bar_len = 1 + int((vb / max_vb) * max_width)
-        
+
         # Extract fee rate from label for coloring
         fee_rate = bucket_fee_rate(label)
         color = get_fee_color(fee_rate)
-        
+
         bar = "█" * bar_len
         text.append(f"{label:>14} | ")
         text.append(bar, style=color)
@@ -354,7 +369,7 @@ def ascii_histogram(buckets: List[Tuple[str, int]], max_width: int = 40) -> Text
     return text
 
 
-def get_mempool_panel(view: Optional[MempoolView]) -> Panel:
+def get_mempool_panel(view: MempoolView | None) -> Panel:
     if not view:
         return Panel(Text("…"), title="Mempool", box=ROUNDED)
     text = Text()
@@ -362,53 +377,67 @@ def get_mempool_panel(view: Optional[MempoolView]) -> Panel:
     text.append(ascii_histogram(view.fee_buckets))
     return Panel(text, title="Mempool", box=ROUNDED)
 
-def get_top_transactions_panel(view: Optional[MempoolView], bitcoin_price: Optional[float], terminal_width: Optional[int] = None, panel_height: Optional[int] = None) -> Panel:
+
+def get_top_transactions_panel(
+    view: MempoolView | None,
+    bitcoin_price: float | None,
+    terminal_width: int | None = None,
+    panel_height: int | None = None,
+) -> Panel:
     global _initial_cache_loading, _transaction_scroll_offset
-    
+
     if not view:
         return Panel(Text("Loading..."), title="Largest Transactions", box=ROUNDED)
-    
+
     if not view.top_transactions:
         if _initial_cache_loading:
-            return Panel(Text("Loading transaction data in background...\nOther panels remain functional"), title="Largest Transactions", box=ROUNDED)
+            return Panel(
+                Text("Loading transaction data in background...\nOther panels remain functional"),
+                title="Largest Transactions",
+                box=ROUNDED,
+            )
         else:
-            return Panel(Text(f"No transaction data available\n(Total mempool txs: {view.total_tx if view else 0})"), title="Largest Transactions", box=ROUNDED)
-    
+            return Panel(
+                Text(f"No transaction data available\n(Total mempool txs: {view.total_tx if view else 0})"),
+                title="Largest Transactions",
+                box=ROUNDED,
+            )
+
     # Determine if we should show the Fee US$ column based on terminal width
     # Hide Fee US$ column when total terminal width < 114 characters
     show_fee_usd_column = terminal_width is None or terminal_width >= 114
-    
+
     # Calculate how many rows can fit in the panel
     # Account for title and header only (roughly 2 lines: title + header)
     available_height = (panel_height or 20) - 2
     visible_rows = max(1, available_height)
-    
+
     # Limit scroll offset to valid range
     total_transactions = len(view.top_transactions)
     max_scroll = max(0, total_transactions - visible_rows)
     _transaction_scroll_offset = min(_transaction_scroll_offset, max_scroll)
     _transaction_scroll_offset = max(0, _transaction_scroll_offset)
-    
+
     # Get the visible slice of transactions
     start_idx = _transaction_scroll_offset
     end_idx = min(start_idx + visible_rows, total_transactions)
     visible_transactions = view.top_transactions[start_idx:end_idx]
-    
+
     # Create table with headers
     table = Table(show_header=True, header_style="bold cyan", box=None, pad_edge=False)
     table.add_column("TxID", style="yellow", width=12)
     table.add_column("BTC", style="orange1", justify="right", width=10)
     table.add_column("US$", style="bright_green", justify="right", width=15)
     table.add_column("sat/vB", style="orange1", justify="right", width=8)
-    
+
     if show_fee_usd_column:
         table.add_column("Fee US$", style="bright_green", justify="right", width=10)
-    
+
     # Show visible transactions
     for tx in visible_transactions:
         txid_short = format_txid(tx.txid)
         amount_btc = f"{tx.amount_btc:.4f}"
-        
+
         # Calculate USD amount if price available
         if bitcoin_price:
             amount_usd = f"${tx.amount_btc * bitcoin_price:,.0f}"
@@ -416,29 +445,29 @@ def get_top_transactions_panel(view: Optional[MempoolView], bitcoin_price: Optio
         else:
             amount_usd = "N/A"
             fee_usd = "N/A"
-            
+
         fee_sat_vb = f"{tx.fee_rate:.1f}"
-        
+
         if show_fee_usd_column:
             table.add_row(txid_short, amount_btc, amount_usd, fee_sat_vb, fee_usd)
         else:
             table.add_row(txid_short, amount_btc, amount_usd, fee_sat_vb)
-    
+
     # Create scroll indicator in title
     scroll_info = ""
     if total_transactions > visible_rows:
         scroll_info = f" ({start_idx + 1}-{end_idx} of {total_transactions})"
-    
+
     return Panel(table, title=f"Largest Transactions{scroll_info}", box=ROUNDED)
 
 
-def get_projection_panel(proj: Optional[BlockProjection], console: Console) -> Panel:
+def get_projection_panel(proj: BlockProjection | None, console: Console) -> Panel:
     if not proj:
         return Panel(Text("…"), title="Next Block Template", box=ROUNDED)
-    
+
     text = Text()
     text.append(f"Transactions: {proj.est_tx:,} | Size: {format_bytes(proj.est_weight_vbytes)}\n")
-    
+
     if proj.transactions:
         # Show fee rate statistics
         fee_rates = [tx.fee_rate for tx in proj.transactions]
@@ -446,15 +475,15 @@ def get_projection_panel(proj: Optional[BlockProjection], console: Console) -> P
         max_fee = max(fee_rates)
         avg_fee = sum(fee_rates) / len(fee_rates)
         text.append(f"Fee: {min_fee:.1f}-{max_fee:.1f} (avg: {avg_fee:.1f}) sat/vB\n\n")
-        
+
         # Render the visual block grid with dynamic sizing
         text.append(render_block_grid(proj.transactions, console))
-        
+
         # Add fee rate legend
         text.append("\nFee Legend: ")
         text.append("█", style="bright_red")
         text.append("100+ ")
-        text.append("█", style="red") 
+        text.append("█", style="red")
         text.append("50+ ")
         text.append("█", style="bright_yellow")
         text.append("20+ ")
@@ -468,17 +497,19 @@ def get_projection_panel(proj: Optional[BlockProjection], console: Console) -> P
         text.append("<2 sat/vB")
     else:
         text.append("\nNo transaction data available")
-        
+
     return Panel(text, title="Next Block Template", box=ROUNDED)
 
 
-def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[MempoolView], Optional[BlockProjection], Optional[BitcoinInfo], Optional[str]]:
+def gather_snapshot(
+    rpc: BitcoinRPC,
+) -> tuple[NodeSnapshot | None, MempoolView | None, BlockProjection | None, BitcoinInfo | None, str | None]:
     try:
         bi = rpc.get_blockchain_info()
         mi = rpc.get_mempool_info()
         peers = rpc.get_connection_count()
         mem_verbose = rpc.get_raw_mempool(True)
-        
+
         # Get detailed peer information for inbound/outbound breakdown
         try:
             peer_info = rpc.get_peer_info()
@@ -488,7 +519,7 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
             # Fallback if peer info is not available
             inbound_count = 0
             outbound_count = int(peers)
-        
+
         snap = NodeSnapshot(
             height=int(bi.get("blocks", 0)),
             headers=int(bi.get("headers", 0)),
@@ -504,11 +535,11 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
         fee_buckets = build_fee_buckets(mem_verbose)
         usage_mb = mi.get("usage", 0) / (1000 * 1000)  # Convert bytes to MB
         maxmempool_mb = mi.get("maxmempool", 0) / (1000 * 1000)  # Convert bytes to MB
-        
+
         # Get cached transaction data (updated once per minute, with block-aware cleanup)
         current_block_height = int(bi.get("blocks", 0))
         top_transactions = fetch_top_transactions(rpc, mem_verbose, current_block_height)
-        
+
         view = MempoolView(
             total_tx=len(mem_verbose),
             total_vbytes=sum(tx.get("vsize", tx.get("weight", 0) // 4) for tx in mem_verbose.values()),
@@ -518,47 +549,41 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
             top_transactions=top_transactions,
         )
         # Projection: try getblocktemplate; fallback to mempool estimation
-        proj: Optional[BlockProjection] = None
+        proj: BlockProjection | None = None
         try:
             gbt = rpc.get_block_template()
             txs = gbt.get("transactions", [])
-            
+
             # Create Transaction objects from block template
             transactions = []
             # Same shape as getrawmempool verbose entries, so build_fee_buckets can bucket the template
-            template_entries: Dict[str, Dict] = {}
+            template_entries: dict[str, dict] = {}
             for i, tx in enumerate(txs):
                 vbytes = tx.get("weight", 0) // 4
                 fee_btc = tx.get("fee", 0) / 1e8
                 fee_rate = (fee_btc * 1e8) / max(1, vbytes)  # sat/vB
                 txid = tx.get("txid", f"tx_{i}")
-                
-                transactions.append(Transaction(
-                    fee_rate=fee_rate,
-                    vbytes=vbytes,
-                    txid=txid
-                ))
+
+                transactions.append(Transaction(fee_rate=fee_rate, vbytes=vbytes, txid=txid))
                 template_entries[txid] = {"vsize": vbytes, "fees": {"base": fee_btc}}
-            
+
             total_vb = sum(tx.vbytes for tx in transactions)
             proj_buckets = build_fee_buckets(template_entries)
             proj = BlockProjection(
-                est_tx=len(transactions), 
-                est_weight_vbytes=total_vb, 
+                est_tx=len(transactions),
+                est_weight_vbytes=total_vb,
                 transactions=transactions,
-                fee_buckets=proj_buckets
+                fee_buckets=proj_buckets,
             )
-            
+
         except RPCError:
             # Fallback: estimate from mempool using greedy algorithm
-            sorted_buckets = sorted(
-                fee_buckets, key=lambda bucket: bucket_fee_rate(bucket[0]), reverse=True
-            )
+            sorted_buckets = sorted(fee_buckets, key=lambda bucket: bucket_fee_rate(bucket[0]), reverse=True)
             capacity = 1_000_000  # ~1M vbytes
             acc_vb = 0
-            proj_buckets: List[Tuple[str, int]] = []
+            proj_buckets: list[tuple[str, int]] = []
             transactions = []
-            
+
             # Create synthetic transactions from fee buckets
             tx_id = 0
             for label, vb in sorted_buckets:
@@ -567,39 +592,34 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
                 take = min(vb, capacity - acc_vb)
                 if take > 0:
                     proj_buckets.append((label, take))
-                    # Parse fee rate from label 
+                    # Parse fee rate from label
                     fee_rate = bucket_fee_rate(label)
                     # Create synthetic transactions (group by ~250 vbytes each)
                     tx_size = 250
                     num_txs = max(1, take // tx_size)
                     for _ in range(num_txs):
-                        transactions.append(Transaction(
-                            fee_rate=fee_rate,
-                            vbytes=min(tx_size, take),
-                            txid=f"synthetic_{tx_id}"
-                        ))
+                        transactions.append(
+                            Transaction(fee_rate=fee_rate, vbytes=min(tx_size, take), txid=f"synthetic_{tx_id}")
+                        )
                         tx_id += 1
                         take -= tx_size
                         if take <= 0:
                             break
                     acc_vb += min(vb, capacity - acc_vb)
-            
+
             est_tx = len(transactions)
             proj = BlockProjection(
-                est_tx=est_tx, 
-                est_weight_vbytes=acc_vb, 
-                transactions=transactions,
-                fee_buckets=proj_buckets
+                est_tx=est_tx, est_weight_vbytes=acc_vb, transactions=transactions, fee_buckets=proj_buckets
             )
-        
+
         # Bitcoin info (price, subsidy, halving)
         block_height = int(bi.get("blocks", 0))
         current_subsidy = get_current_subsidy(block_height)
         blocks_until_halving, halving_date = calculate_halving_info(block_height)
-        
+
         # Fetch Bitcoin price (async, might fail)
         bitcoin_price = fetch_bitcoin_price()
-        
+
         # Get time since last block
         time_since_last_block = None
         try:
@@ -610,15 +630,15 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
             time_since_last_block = current_timestamp - block_timestamp
         except (RPCError, Exception):
             pass  # If we can't get block time, just show N/A
-        
+
         bitcoin_info = BitcoinInfo(
             price_usd=bitcoin_price,
             current_subsidy=current_subsidy,
             blocks_until_halving=blocks_until_halving,
             estimated_halving_date=halving_date,
-            time_since_last_block=time_since_last_block
+            time_since_last_block=time_since_last_block,
         )
-        
+
         return snap, view, proj, bitcoin_info, None
     except RPCError as e:
         return None, None, None, None, str(e)
@@ -631,23 +651,24 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
 _quit_requested = False
 
 # Global cache for transaction data
-_transaction_cache: List[MempoolTransaction] = []
+_transaction_cache: list[MempoolTransaction] = []
 _last_transaction_fetch = 0.0
 TRANSACTION_CACHE_DURATION = 60.0  # 60 seconds
 
 # Persistent storage for individual transaction data
-_transaction_data_cache: Dict[str, MempoolTransaction] = {}  # txid -> transaction data
+_transaction_data_cache: dict[str, MempoolTransaction] = {}  # txid -> transaction data
 _known_txids: set = set()  # Track which transactions we've seen before
 _last_block_height: int = 0  # Track block height to detect new blocks
 _initial_cache_loading: bool = False  # Track if initial cache loading is in progress
-_cache_loading_thread: Optional[threading.Thread] = None
+_cache_loading_thread: threading.Thread | None = None
 # Guards _transaction_data_cache, which the background loader writes while the UI thread reads it
 _cache_lock = threading.Lock()
 
 # Scroll state for transactions list
 _transaction_scroll_offset: int = 0  # Current scroll position
 
-def _load_transactions_background(rpc: BitcoinRPC, txids_to_process: List[str], mem_verbose: Dict[str, Dict]):
+
+def _load_transactions_background(rpc: BitcoinRPC, txids_to_process: list[str], mem_verbose: dict[str, dict]):
     """Background thread function to load transaction data"""
     global _initial_cache_loading
 
@@ -674,16 +695,15 @@ def _load_transactions_background(rpc: BitcoinRPC, txids_to_process: List[str], 
                 # Store in persistent cache
                 with _cache_lock:
                     _transaction_data_cache[txid] = MempoolTransaction(
-                        txid=txid,
-                        amount_btc=amount_btc,
-                        fee_btc=fee_btc,
-                        fee_rate=fee_rate
+                        txid=txid, amount_btc=amount_btc, fee_btc=fee_btc, fee_rate=fee_rate
                     )
     finally:
         _initial_cache_loading = False
 
 
-def fetch_top_transactions(rpc: BitcoinRPC, mem_verbose: Dict[str, Dict], current_block_height: int = 0) -> List[MempoolTransaction]:
+def fetch_top_transactions(
+    rpc: BitcoinRPC, mem_verbose: dict[str, dict], current_block_height: int = 0
+) -> list[MempoolTransaction]:
     """Fetch transaction data with smart incremental caching"""
     global _transaction_cache, _last_transaction_fetch, _known_txids
     global _last_block_height, _initial_cache_loading, _cache_loading_thread
@@ -723,9 +743,7 @@ def fetch_top_transactions(rpc: BitcoinRPC, mem_verbose: Dict[str, Dict], curren
             _known_txids.update(new_txids)
             _initial_cache_loading = True
             _cache_loading_thread = threading.Thread(
-                target=_load_transactions_background,
-                args=(rpc, new_txids, mem_verbose),
-                daemon=True
+                target=_load_transactions_background, args=(rpc, new_txids, mem_verbose), daemon=True
             )
             _cache_loading_thread.start()
 
@@ -734,10 +752,7 @@ def fetch_top_transactions(rpc: BitcoinRPC, mem_verbose: Dict[str, Dict], curren
     # Rebuild the sorted list from all cached data
     # Only include transactions that are still in the current mempool
     with _cache_lock:
-        valid_transactions = [
-            tx for txid, tx in _transaction_data_cache.items()
-            if txid in current_txids
-        ]
+        valid_transactions = [tx for txid, tx in _transaction_data_cache.items() if txid in current_txids]
 
     # Sort by actual BTC output amount descending and take top 100
     valid_transactions.sort(key=lambda x: x.amount_btc, reverse=True)
@@ -749,14 +764,14 @@ def fetch_top_transactions(rpc: BitcoinRPC, mem_verbose: Dict[str, Dict], curren
 def keyboard_listener():
     """Background thread to listen for single keypress input"""
     global _quit_requested, _transaction_scroll_offset
-    
+
     try:
         while not _quit_requested:
             try:
                 # readchar.readkey() blocks until a key is pressed
                 # but doesn't interfere with Rich's display
                 key = readchar.readkey()
-                if key.lower() == 'q':
+                if key.lower() == "q":
                     _quit_requested = True
                     break
                 elif key == readchar.key.UP:
@@ -790,10 +805,7 @@ def keyboard_listener():
 
 def build_layout() -> Layout:
     layout = Layout()
-    layout.split_column(
-        Layout(name="top", size=7),
-        Layout(name="bottom")
-    )
+    layout.split_column(Layout(name="top", size=7), Layout(name="bottom"))
     layout["top"].split_row(
         Layout(name="sys"),
         Layout(name="bitcoin_info"),
@@ -826,7 +838,11 @@ def update_layout(layout: Layout, rpc: BitcoinRPC, console: Console) -> None:
         # Calculate approximate height available for the transactions panel
         # Account for: top panels (7 lines) + mempool panel (15 lines) only
         transactions_panel_height = terminal_height - 7 - 15
-        layout["top_transactions"].update(get_top_transactions_panel(mem_view, bitcoin_info.price_usd if bitcoin_info else None, terminal_width, transactions_panel_height))
+        layout["top_transactions"].update(
+            get_top_transactions_panel(
+                mem_view, bitcoin_info.price_usd if bitcoin_info else None, terminal_width, transactions_panel_height
+            )
+        )
         layout["projection"].update(get_projection_panel(proj, console))
     except Exception as e:
         layout["node"].update(get_node_panel(None, f"Unexpected error: {type(e).__name__}: {e}"))
