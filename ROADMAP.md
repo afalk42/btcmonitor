@@ -1,6 +1,6 @@
 # Roadmap
 
-Candidate features for btcmonitor, roughly in order of value. Nothing here is scheduled yet; each item is meant to become its own pull request.
+Candidate features for btcmonitor, roughly in order of value. Each item is meant to become its own pull request; completed items are marked ✅ with the date they were merged.
 
 ## Features
 
@@ -20,4 +20,4 @@ Candidate features for btcmonitor, roughly in order of value. Nothing here is sc
 
 ## Maintenance
 
-- Python 3.9 reached end of life in October 2025. Consider raising `requires-python` (and ruff's `target-version`) when convenient.
+- ✅ *2026-10-13* — **Minimum Python raised to 3.11.** Python 3.9 reached end of life in October 2025; 3.11 is supported until October 2027.

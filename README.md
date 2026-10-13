@@ -19,11 +19,11 @@ A terminal dashboard (TUI) that monitors a local Bitcoin Core node using its JSO
 
 The following are needed for a successful installation:
 
-- Python 3.9+
+- Python 3.11+
 - PIP Python Package Manager
 - Python3 virtual environments support
 
-If you don't have them already available, you can use these commands on Linux to install the prerequisites:
+If you don't have them already available, you can use these commands on Linux to install the prerequisites (Ubuntu 24.04 and later ship Python 3.12; on older releases install a newer Python first):
 
 ```bash
 sudo apt install python3 python3-pip python3-venv
@@ -72,7 +72,7 @@ If no user and password are configured, cookie authentication will be attempted.
 `--network` accepts `mainnet`, `testnet` (alias `testnet3`), `testnet4`, `signet` and `regtest`. Unless `--rpc-port` is given, the network's standard RPC port is used (8332, 18332, 48332, 38332 and 18443 respectively).
 
 ## Requirements
-- Python 3.9+ with pip and venv support
+- Python 3.11+ with pip and venv support
 - A running `bitcoind` with JSON-RPC enabled (default on loopback)
 
 ## Features

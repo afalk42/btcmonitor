@@ -27,7 +27,7 @@ def build_fee_buckets(mempool: dict[str, dict]) -> FeeBuckets:
 
     # First band reads "< 2  sat/vB", the others "2+ sat/vB", "3+ sat/vB", ..., "1000+ sat/vB"
     labels = [f"< {FEE_BANDS[1]}  sat/vB"] + [f"{lo}+ sat/vB" for lo in FEE_BANDS[1:]]
-    return list(zip(labels, vbytes_per_band))
+    return list(zip(labels, vbytes_per_band, strict=True))
 
 
 def bucket_fee_rate(label: str) -> float:
