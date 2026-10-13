@@ -1,21 +1,40 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "btcmonitor"
-version = "0.3.0"
-description = "Terminal TUI to monitor a local Bitcoin Core node via JSON-RPC"
+version = "0.4.0"
+description = "Terminal dashboard for a local Bitcoin Core node: mempool, fees, blocks, peers and sync progress"
 readme = "README.md"
-authors = [{name = "btcmonitor"}]
-license = {file = "LICENSE"}
+authors = [{name = "Alexander Falk"}]
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
+keywords = ["bitcoin", "bitcoin-core", "bitcoind", "mempool", "tui", "dashboard", "monitoring"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "Intended Audience :: System Administrators",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: System :: Monitoring",
+]
 dependencies = [
   "requests>=2.32",
   "rich>=13.7",
   "psutil>=5.9",
   "readchar>=4.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/afalk42/btcmonitor"
+Issues = "https://github.com/afalk42/btcmonitor/issues"
+Changelog = "https://github.com/afalk42/btcmonitor/blob/main/CHANGELOG.md"
 
 [project.scripts]
 btcmonitor = "btcmonitor.__main__:main"

@@ -15,29 +15,25 @@ A terminal dashboard (TUI) that monitors a local Bitcoin Core node using its JSO
   - Scrollable list of the 100 largest transactions in the mempool sorted by BTC output
   - While the node is syncing: progress, blocks per second and estimated time to completion
 
-![Screenshot](/screenshot.png)
+![Screenshot](https://raw.githubusercontent.com/afalk42/btcmonitor/main/screenshot.png)
 
 ## Installation
 
-### Prerequisites
+btcmonitor needs Python 3.11 or later. Ubuntu 24.04 and later ship a recent enough Python; on older releases install a newer Python first.
 
-The following are needed for a successful installation:
+### With pipx (recommended)
 
-- Python 3.11+
-- PIP Python Package Manager
-- Python3 virtual environments support
-
-If you don't have them already available, you can use these commands on Linux to install the prerequisites (Ubuntu 24.04 and later ship Python 3.12; on older releases install a newer Python first):
+[pipx](https://pipx.pypa.io/) installs command-line tools into their own environment and puts them on your `PATH`:
 
 ```bash
-sudo apt install python3 python3-pip python3-venv
+pipx install btcmonitor
 ```
 
-### Installation
+To upgrade later, run `pipx upgrade btcmonitor`. If you don't have pipx yet: `sudo apt install pipx` on Ubuntu/Debian, `brew install pipx` on macOS, or `python -m pip install --user pipx` on Windows, followed by `pipx ensurepath`.
 
-#### On macOS and Ubuntu/Linux
+### From source
 
-On both macOS and Ubuntu using pip in Python3 requires the use of a venv virtual environment.
+On macOS and Linux, pip needs a virtual environment:
 
 ```bash
 git clone https://github.com/afalk42/btcmonitor
@@ -47,9 +43,7 @@ cd btcmonitor
 pip install -e .
 ```
 
-#### On Windows 11
-
-It appears that using a Python venv is not required on Windows.
+On Windows 11 a virtual environment is not required:
 
 ```bash
 git clone https://github.com/afalk42/btcmonitor
@@ -82,7 +76,7 @@ The BTC price comes from the public [CoinGecko](https://www.coingecko.com/) API,
 `--currency` (or `BTCMONITOR_CURRENCY`) selects the currency for the price and the transaction values, e.g. `--currency eur`. Any currency CoinGecko quotes works; an unsupported one is reported in the Bitcoin panel.
 
 ## Requirements
-- Python 3.11+ with pip and venv support
+- Python 3.11+
 - A running `bitcoind` with JSON-RPC enabled (default on loopback)
 
 ## Features
@@ -117,7 +111,9 @@ ruff check .
 ruff format --check .
 ```
 
-The tests run offline and do not require a Bitcoin Core node.
+The tests run offline and do not require a Bitcoin Core node. GitHub Actions runs the same checks on every push and pull request.
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each version and [RELEASING.md](RELEASING.md) for how releases are published to PyPI.
 
 ## Project layout
 
@@ -134,4 +130,4 @@ The tests run offline and do not require a Bitcoin Core node.
 | `price.py` | Cached BTC/USD price |
 | `fees.py`, `chain.py`, `formatting.py` | Pure calculations: fee buckets, next-block projection, subsidy and halving, text formatting |
 | `models.py` | Data classes passed from the collector to the panels |
-| `panels.py`, `app.py`, `keyboard.py` | Rendering, layout, render loop and keyboard input | GitHub Actions runs the same checks on every push and pull request.
+| `panels.py`, `app.py`, `keyboard.py` | Rendering, layout, render loop and keyboard input |
