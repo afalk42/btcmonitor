@@ -1,0 +1,125 @@
+import unittest
+from unittest.mock import Mock, patch
+
+from btcmonitor.rpc import BitcoinRPC, RPCError
+from btcmonitor.ui import ascii_histogram, bucket_fee_rate, gather_snapshot
+
+
+class FeeBucketTests(unittest.TestCase):
+    def test_parses_bucket_labels_with_variable_whitespace(self):
+        for label, expected in (
+            ("< 2 sat/vB", 1.0),
+            ("< 2  sat/vB", 1.0),
+            ("  < 2 sat/vB  ", 1.0),
+            ("2+ sat/vB", 2.0),
+            ("  3+\t sat/vB ", 3.0),
+            ("1000+ sat/vB", 1000.0),
+        ):
+            with self.subTest(label=label):
+                self.assertEqual(bucket_fee_rate(label), expected)
+
+    def test_histogram_preserves_fee_colors(self):
+        histogram = ascii_histogram(
+            [("< 2  sat/vB", 250), ("2+ sat/vB", 250), ("1000+ sat/vB", 250)]
+        )
+        bar_styles = [
+            span.style for span in histogram.spans
+            if "█" in histogram.plain[span.start:span.end]
+        ]
+        self.assertEqual(bar_styles, ["blue", "green", "bright_red"])
+
+
+class BlockProjectionTests(unittest.TestCase):
+    def setUp(self):
+        self.rpc = Mock(spec=BitcoinRPC)
+        self.rpc.get_blockchain_info.return_value = {
+            "blocks": 100,
+            "headers": 900000,
+            "verificationprogress": 0.001,
+            "chain": "main",
+            "initialblockdownload": True,
+        }
+        self.rpc.get_mempool_info.return_value = {}
+        self.rpc.get_connection_count.return_value = 1
+        self.rpc.get_peer_info.return_value = [{"inbound": False}]
+        self.rpc.get_raw_mempool.return_value = {}
+        self.rpc.get_block_template.side_effect = RPCError(
+            "{'code': -10, 'message': 'Bitcoin Core is in initial sync "
+            "and waiting for blocks...'}"
+        )
+        self.rpc.get_block.return_value = {"time": 1700000000}
+        # Keep price HTTP requests and background transaction fetching offline.
+        for target, result in (
+            ("btcmonitor.ui.fetch_bitcoin_price", None),
+            ("btcmonitor.ui.fetch_top_transactions", []),
+        ):
+            patcher = patch(target, return_value=result)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def projection(self):
+        snapshot, view, projection, bitcoin_info, error = gather_snapshot(self.rpc)
+        self.assertIsNone(error)
+        self.assertIsNotNone(snapshot)
+        self.assertIsNotNone(view)
+        self.assertIsNotNone(bitcoin_info)
+        self.assertIsNotNone(projection)
+        return projection
+
+    def test_ibd_with_empty_mempool_returns_empty_projection(self):
+        projection = self.projection()
+        self.assertEqual(projection.est_tx, 0)
+        self.assertEqual(projection.est_weight_vbytes, 0)
+        self.assertEqual(projection.transactions, [])
+        self.assertEqual(projection.fee_buckets, [])
+
+    def test_ibd_projects_every_generated_bucket_in_descending_fee_order(self):
+        # One 250-vbyte transaction inside each band, away from boundaries.
+        self.rpc.get_raw_mempool.return_value = {
+            str(index): {"vsize": 250, "fees": {"base": fee_btc}}
+            for index, fee_btc in enumerate(
+                [0.0000025, 0.00000625, 0.00001, 0.00002, 0.0000375,
+                 0.000075, 0.0001875, 0.000625, 0.001875, 0.00375]
+            )
+        }
+        projection = self.projection()
+        self.assertEqual(
+            [tx.fee_rate for tx in projection.transactions],
+            [1000, 500, 100, 50, 20, 10, 5, 3, 2, 1],
+        )
+        self.assertEqual(projection.est_tx, 10)
+        self.assertEqual(projection.est_weight_vbytes, 2500)
+        self.assertEqual(projection.fee_buckets[-1], ("< 2  sat/vB", 250))
+
+    def test_ibd_prioritizes_higher_fees_when_block_is_full(self):
+        self.rpc.get_raw_mempool.return_value = {
+            "low": {"vsize": 500000, "fees": {"base": 0.005}},
+            "medium": {"vsize": 500000, "fees": {"base": 0.02}},
+            "high": {"vsize": 750000, "fees": {"base": 0.15}},
+        }
+        projection = self.projection()
+        self.assertEqual(projection.est_weight_vbytes, 1000000)
+        self.assertEqual(
+            projection.fee_buckets,
+            [("10+ sat/vB", 750000), ("3+ sat/vB", 250000)],
+        )
+        self.assertEqual(projection.est_tx, 4000)
+        self.assertEqual(
+            [tx.fee_rate for tx in projection.transactions],
+            [10] * 3000 + [3] * 1000,
+        )
+
+    def test_successful_block_template_uses_real_transactions(self):
+        self.rpc.get_block_template.side_effect = None
+        self.rpc.get_block_template.return_value = {
+            "transactions": [{"txid": "template-tx", "weight": 1000, "fee": 1250}]
+        }
+        projection = self.projection()
+        self.assertEqual(projection.est_tx, 1)
+        self.assertEqual(projection.est_weight_vbytes, 250)
+        self.assertEqual(projection.transactions[0].txid, "template-tx")
+        self.assertEqual(projection.transactions[0].fee_rate, 5)
+
+
+if __name__ == "__main__":
+    unittest.main()

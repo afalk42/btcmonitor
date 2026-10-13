@@ -81,3 +81,13 @@ If `--rpc-user`/`--rpc-password` are omitted, cookie authentication will be atte
 
 ## Quit
 - Press `q` or `Ctrl+C`
+
+## Tests
+
+After installing the project in your virtual environment, run:
+
+```bash
+python -m unittest discover -v
+```
+
+The tests run offline and do not require a Bitcoin Core node.
