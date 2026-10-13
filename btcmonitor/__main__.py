@@ -4,10 +4,10 @@ import argparse
 import os
 from pathlib import Path
 
+from .app import run_dashboard
 from .conf import read_bitcoin_conf
 from .paths import DEFAULT_RPC_PORTS, default_base_datadir, discover_default_datadir
 from .rpc import BitcoinRPC, RPCConfig
-from .ui import render_dashboard
 
 
 def parse_args(argv=None):
@@ -77,7 +77,7 @@ def main(argv=None):
     args = parse_args(argv)
     rpc = BitcoinRPC(build_config(args))
     try:
-        render_dashboard(rpc, refresh_hz=args.refresh)
+        run_dashboard(rpc, refresh_hz=args.refresh)
     except KeyboardInterrupt:
         pass
     print("Exiting…")
