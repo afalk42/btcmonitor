@@ -20,6 +20,21 @@ class NodeSnapshot:
     mempool_bytes: int
     mempool_tx: int
     difficulty: float
+    initial_block_download: bool = False
+
+
+@dataclass
+class SyncProgress:
+    """Initial block download status; rates and ETA are None until enough samples exist"""
+
+    height: int
+    headers: int
+    verification_progress: float  # 0..1, Bitcoin Core's estimate by transaction count
+    blocks_per_second: float | None
+    eta_seconds: float | None
+    tip_time: int | None  # unix timestamp of the most recent validated block
+    size_on_disk: int | None
+    pruned: bool = False
 
 
 @dataclass
@@ -72,4 +87,5 @@ class DashboardData:
     mempool: MempoolView | None = None
     projection: BlockProjection | None = None
     bitcoin: BitcoinInfo | None = None
+    sync: SyncProgress | None = None  # set only during initial block download
     error: str | None = None

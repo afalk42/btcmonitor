@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 
 import psutil
 from rich.box import ROUNDED
+from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
 from .fees import bucket_fee_rate
-from .formatting import format_bytes, format_time_since_block, format_txid
-from .models import BitcoinInfo, BlockProjection, FeeBuckets, MempoolView, NodeSnapshot, Transaction
+from .formatting import format_bytes, format_duration, format_time_since_block, format_txid
+from .models import BitcoinInfo, BlockProjection, FeeBuckets, MempoolView, NodeSnapshot, SyncProgress, Transaction
 
 # Colors for fee rates, highest threshold (sat/vB) first; anything lower is blue
 FEE_COLORS = [
@@ -246,3 +248,37 @@ def get_projection_panel(proj: BlockProjection | None, terminal_width: int, term
         text.append("\nNo transaction data available")
 
     return Panel(text, title="Next Block Template", box=ROUNDED)
+
+
+def progress_bar(fraction: float, width: int) -> Text:
+    """A `width`-cell bar filled to `fraction` (clamped to 0..1)"""
+    filled = round(max(0.0, min(1.0, fraction)) * width)
+    text = Text()
+    text.append("█" * filled, style="green")
+    text.append("░" * (width - filled), style="dim")
+    return text
+
+
+def get_sync_panel(sync: SyncProgress, terminal_width: int) -> Panel:
+    """Shown instead of the mempool panels while the node is in initial block download"""
+    bar = progress_bar(sync.verification_progress, max(10, min(100, terminal_width - 16)))
+    bar.append(f" {sync.verification_progress * 100:.2f}%")
+
+    table = Table.grid(padding=(0, 1))
+    table.add_column(justify="right", style="bold cyan")
+    table.add_column()
+    remaining = max(0, sync.headers - sync.height)
+    table.add_row("Blocks", f"{sync.height:,} of {sync.headers:,} known ({remaining:,} to go)")
+    measuring = Text("measuring…", style="dim")
+    table.add_row(
+        "Speed", f"{sync.blocks_per_second:,.1f} blocks/s" if sync.blocks_per_second is not None else measuring
+    )
+    table.add_row("Time Left", f"~{format_duration(sync.eta_seconds)}" if sync.eta_seconds is not None else measuring)
+    if sync.tip_time:
+        tip = datetime.fromtimestamp(sync.tip_time, tz=UTC)
+        table.add_row("Block Date", tip.strftime("%Y-%m-%d %H:%M UTC"))
+    if sync.size_on_disk is not None:
+        table.add_row("On Disk", format_bytes(sync.size_on_disk) + (" (pruned)" if sync.pruned else ""))
+
+    note = Text("\nThe mempool and next-block panels return once the node has caught up.", style="dim")
+    return Panel(Group(bar, Text(), table, note), title="Initial Block Download", box=ROUNDED)

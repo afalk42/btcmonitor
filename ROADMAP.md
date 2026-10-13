@@ -4,7 +4,7 @@ Candidate features for btcmonitor, roughly in order of value. Each item is meant
 
 ## Features
 
-1. **Initial block download view.** While `getblockchaininfo` reports `initialblockdownload`, show sync progress, blocks per second and an estimated time to completion instead of the mostly empty mempool panels. This is a natural follow-up to PR #1, which stopped the dashboard from crashing during IBD.
+1. ✅ *2026-10-13* — **Initial block download view.** While `getblockchaininfo` reports `initialblockdownload`, show sync progress, blocks per second and an estimated time to completion instead of the mostly empty mempool panels. This is a natural follow-up to PR #1, which stopped the dashboard from crashing during IBD.
 
 2. **Fee estimates.** Show `estimatesmartfee` results for 1, 3, 6 and 144 blocks, so the dashboard answers "what fee should I pay right now?".
 

@@ -3,7 +3,15 @@ import unittest
 
 from rich.console import Console
 
-from btcmonitor.models import BitcoinInfo, BlockProjection, MempoolTransaction, MempoolView, NodeSnapshot, Transaction
+from btcmonitor.models import (
+    BitcoinInfo,
+    BlockProjection,
+    MempoolTransaction,
+    MempoolView,
+    NodeSnapshot,
+    SyncProgress,
+    Transaction,
+)
 from btcmonitor.panels import (
     ascii_histogram,
     get_bitcoin_info_panel,
@@ -11,8 +19,10 @@ from btcmonitor.panels import (
     get_mempool_panel,
     get_node_panel,
     get_projection_panel,
+    get_sync_panel,
     get_top_transactions_panel,
     max_transaction_scroll,
+    progress_bar,
     render_block_grid,
 )
 
@@ -133,6 +143,41 @@ class OtherPanelTests(unittest.TestCase):
         self.assertIn("Fee: 2.0-10.0 (avg: 6.0) sat/vB", text)
         self.assertIn("100+ ", text)
         self.assertIn("<2 sat/vB", text)
+
+
+class SyncPanelTests(unittest.TestCase):
+    def test_progress_details(self):
+        sync = SyncProgress(
+            height=512_345,
+            headers=971_274,
+            verification_progress=0.4217,
+            blocks_per_second=35.25,
+            eta_seconds=3 * 3600 + 12 * 60,
+            tip_time=1488628800,  # 2017-03-04 12:00 UTC
+            size_on_disk=120 * 1024**3,
+            pruned=True,
+        )
+        text = render(get_sync_panel(sync, terminal_width=120))
+        for expected in (
+            "Initial Block Download",
+            "42.17%",
+            "512,345 of 971,274 known (458,929 to go)",
+            "35.2 blocks/s",
+            "~3h 12m",
+            "2017-03-04 12:00 UTC",
+            "120 GB (pruned)",
+        ):
+            self.assertIn(expected, text)
+
+    def test_rates_still_measuring(self):
+        sync = SyncProgress(10, 900_000, 0.0001, None, None, None, None)
+        text = render(get_sync_panel(sync, terminal_width=120))
+        self.assertEqual(text.count("measuring…"), 2)
+        self.assertNotIn("Block Date", text)
+
+    def test_progress_bar_fill(self):
+        self.assertEqual(progress_bar(0.25, 8).plain, "██░░░░░░")
+        self.assertEqual(progress_bar(1.5, 4).plain, "████")
 
 
 class BlockGridTests(unittest.TestCase):
