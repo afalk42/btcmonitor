@@ -7,7 +7,22 @@ from rich.console import Console
 
 from btcmonitor.app import Dashboard
 from btcmonitor.collector import Collector
+from btcmonitor.keyboard import KeyReader
 from btcmonitor.models import DashboardData, MempoolTransaction, MempoolView
+
+
+def key_reader(*keys):
+    """A KeyReader stand-in that yields `keys`; an exception instance is raised instead of yielded"""
+    reader = Mock(spec=KeyReader)
+
+    def generate():
+        for key in keys:
+            if isinstance(key, BaseException):
+                raise key
+            yield key
+
+    reader.keys.side_effect = generate
+    return reader
 
 
 def data_with_transactions(count):
@@ -60,16 +75,22 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("Unexpected error: OSError: psutil failed", self.node_panel_text())
 
     def test_ctrl_c_in_keyboard_thread_quits(self):
-        # readchar raises KeyboardInterrupt in the thread that reads keys, not in the main thread
-        with patch("btcmonitor.app.readchar.readkey", side_effect=KeyboardInterrupt):
-            self.dashboard._listen_keys()
+        # On Windows readchar raises KeyboardInterrupt in the thread that reads keys, not in the main thread
+        self.dashboard.key_reader = key_reader(KeyboardInterrupt())
+        self.dashboard._listen_keys()
         self.assertTrue(self.dashboard.quit.is_set())
 
     def test_keys_are_handled_until_quit(self):
-        with patch("btcmonitor.app.readchar.readkey", side_effect=[readchar.key.DOWN, "q", "x"]) as readkey:
-            self.dashboard._listen_keys()
+        self.dashboard.update_layout(data_with_transactions(100))
+        self.dashboard.key_reader = key_reader(readchar.key.DOWN, readchar.key.DOWN, "q", readchar.key.DOWN)
+        self.dashboard._listen_keys()
         self.assertTrue(self.dashboard.quit.is_set())
-        self.assertEqual(readkey.call_count, 2)  # stopped reading after q
+        self.assertEqual(self.dashboard.scroll_offset, 2)  # the DOWN after q was not handled
+
+    def test_keyboard_failure_leaves_dashboard_running(self):
+        self.dashboard.key_reader = key_reader(OSError("not a terminal"))
+        self.dashboard._listen_keys()
+        self.assertFalse(self.dashboard.quit.is_set())
 
 
 if __name__ == "__main__":

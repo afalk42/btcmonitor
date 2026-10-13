@@ -10,6 +10,7 @@ from rich.layout import Layout
 from rich.live import Live
 
 from .collector import Collector
+from .keyboard import KeyReader
 from .models import DashboardData
 from .panels import (
     get_bitcoin_info_panel,
@@ -47,8 +48,15 @@ def build_layout() -> Layout:
 
 
 class Dashboard:
-    def __init__(self, collector: Collector, refresh_hz: float = 2.0, console: Console | None = None):
+    def __init__(
+        self,
+        collector: Collector,
+        refresh_hz: float = 2.0,
+        console: Console | None = None,
+        key_reader: KeyReader | None = None,
+    ):
         self.collector = collector
+        self.key_reader = key_reader or KeyReader()
         self.refresh_interval = max(0.1, 1.0 / refresh_hz)
         self.console = console or Console()
         self.layout = build_layout()
@@ -78,18 +86,17 @@ class Dashboard:
         self._redraw.set()
 
     def _listen_keys(self) -> None:
-        while not self.quit.is_set():
-            try:
-                # Blocks until a key is pressed; doesn't interfere with Rich's display
-                key = readchar.readkey()
-            except KeyboardInterrupt:
-                # readchar reads Ctrl+C as a key and raises it here rather than in the main thread
-                self.quit.set()
-                break
-            except Exception:
-                # No usable keyboard (e.g. stdin is not a terminal); keep displaying without it
-                break
-            self.handle_key(key)
+        try:
+            for key in self.key_reader.keys():
+                self.handle_key(key)
+                if self.quit.is_set():
+                    break
+        except KeyboardInterrupt:
+            # On Windows readchar reports Ctrl+C here, in the reading thread, rather than in the main thread
+            self.quit.set()
+        except Exception:
+            # No usable keyboard (e.g. stdin is not a terminal); keep displaying without it
+            pass
         self._redraw.set()
 
     def update_layout(self, data: DashboardData) -> None:
@@ -116,9 +123,9 @@ class Dashboard:
 
     def run(self) -> None:
         self.collector.start()
-        threading.Thread(target=self._listen_keys, daemon=True).start()
         try:
-            with Live(console=self.console, auto_refresh=False, screen=True, transient=False) as live:
+            with self.key_reader, Live(console=self.console, auto_refresh=False, screen=True, transient=False) as live:
+                threading.Thread(target=self._listen_keys, daemon=True).start()
                 while not self.quit.is_set():
                     self.update_layout(self.collector.latest)
                     self.console.set_window_title("btcmonitor")
