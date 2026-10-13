@@ -82,7 +82,12 @@ class BitcoinRPC:
             raise RPCError(f"Unauthorized to {target}: check rpcuser/rpcpassword or rpcauth, or{cookie_note} for this network ({self.config.network}).")
         if resp.status_code >= 400:
             raise RPCError(f"HTTP {resp.status_code}: {resp.text}")
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError as e:
+            raise RPCError(f"Invalid JSON from {self._url}: {resp.text[:200]!r}") from e
+        if not isinstance(data, dict):
+            raise RPCError(f"Unexpected JSON-RPC response from {self._url}: {str(data)[:200]}")
         if data.get("error"):
             raise RPCError(str(data["error"]))
         return data.get("result")

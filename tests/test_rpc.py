@@ -73,5 +73,22 @@ class CookieAuthTests(unittest.TestCase):
         self.assertEqual(node.calls, 1)
 
 
+
+class ResponseParsingTests(unittest.TestCase):
+    def call_with_response(self, **attrs):
+        response = Mock(status_code=200, **attrs)
+        rpc = BitcoinRPC(RPCConfig(user="u", password="p"))
+        with patch("btcmonitor.rpc.requests.post", return_value=response):
+            return rpc.call("getblockcount")
+
+    def test_non_json_body_raises_rpc_error(self):
+        with self.assertRaisesRegex(RPCError, "Invalid JSON"):
+            self.call_with_response(text="<html>proxy error</html>", json=Mock(side_effect=ValueError("no JSON")))
+
+    def test_non_object_json_raises_rpc_error(self):
+        with self.assertRaisesRegex(RPCError, "Unexpected JSON-RPC response"):
+            self.call_with_response(json=Mock(return_value=[1, 2]))
+
+
 if __name__ == "__main__":
     unittest.main()

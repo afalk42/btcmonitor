@@ -622,6 +622,9 @@ def gather_snapshot(rpc: BitcoinRPC) -> Tuple[Optional[NodeSnapshot], Optional[M
         return snap, view, proj, bitcoin_info, None
     except RPCError as e:
         return None, None, None, None, str(e)
+    except Exception as e:
+        # Unexpected data from the node must not take down the dashboard; show it and keep polling
+        return None, None, None, None, f"Unexpected error: {type(e).__name__}: {e}"
 
 
 # Global flag for quit signal
@@ -785,11 +788,7 @@ def keyboard_listener():
         pass
 
 
-def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
-    global _quit_requested
-    _quit_requested = False
-    
-    console = Console()
+def build_layout() -> Layout:
     layout = Layout()
     layout.split_column(
         Layout(name="top", size=7),
@@ -810,6 +809,35 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
         Layout(name="mempool", size=15),  # Fixed size for mempool (title + content + borders)
         Layout(name="top_transactions"),  # Takes remaining space
     )
+    return layout
+
+
+def update_layout(layout: Layout, rpc: BitcoinRPC, console: Console) -> None:
+    """Refresh every panel; an unexpected error is shown in the node panel instead of ending the program"""
+    try:
+        snap, mem_view, proj, bitcoin_info, err = gather_snapshot(rpc)
+        layout["sys"].update(get_system_panel())
+        layout["bitcoin_info"].update(get_bitcoin_info_panel(bitcoin_info))
+        layout["node"].update(get_node_panel(snap, err))
+        layout["mempool"].update(get_mempool_panel(mem_view))
+        # Pass terminal dimensions for dynamic column hiding and scrolling
+        terminal_width = console.size.width
+        terminal_height = console.size.height
+        # Calculate approximate height available for the transactions panel
+        # Account for: top panels (7 lines) + mempool panel (15 lines) only
+        transactions_panel_height = terminal_height - 7 - 15
+        layout["top_transactions"].update(get_top_transactions_panel(mem_view, bitcoin_info.price_usd if bitcoin_info else None, terminal_width, transactions_panel_height))
+        layout["projection"].update(get_projection_panel(proj, console))
+    except Exception as e:
+        layout["node"].update(get_node_panel(None, f"Unexpected error: {type(e).__name__}: {e}"))
+
+
+def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
+    global _quit_requested
+    _quit_requested = False
+
+    console = Console()
+    layout = build_layout()
 
     # Start keyboard listener thread
     keyboard_thread = threading.Thread(target=keyboard_listener, daemon=True)
@@ -820,20 +848,8 @@ def render_dashboard(rpc: BitcoinRPC, refresh_hz: float = 2.0) -> None:
             # Check for quit signal
             if _quit_requested:
                 break
-                
-            snap, mem_view, proj, bitcoin_info, err = gather_snapshot(rpc)
-            layout["sys"].update(get_system_panel())
-            layout["bitcoin_info"].update(get_bitcoin_info_panel(bitcoin_info))
-            layout["node"].update(get_node_panel(snap, err))
-            layout["mempool"].update(get_mempool_panel(mem_view))
-            # Pass terminal dimensions for dynamic column hiding and scrolling
-            terminal_width = console.size.width
-            terminal_height = console.size.height
-            # Calculate approximate height available for the transactions panel
-            # Account for: top panels (7 lines) + mempool panel (15 lines) only
-            transactions_panel_height = terminal_height - 7 - 15
-            layout["top_transactions"].update(get_top_transactions_panel(mem_view, bitcoin_info.price_usd if bitcoin_info else None, terminal_width, transactions_panel_height))
-            layout["projection"].update(get_projection_panel(proj, console))
+
+            update_layout(layout, rpc, console)
             console.set_window_title("btcmonitor")
             live.update(layout, refresh=True)
             time.sleep(max(0.1, 1.0 / refresh_hz))

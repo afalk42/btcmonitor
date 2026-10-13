@@ -1,8 +1,18 @@
+import io
 import unittest
 from unittest.mock import Mock, patch
 
+from rich.console import Console
+
 from btcmonitor.rpc import BitcoinRPC, RPCError
-from btcmonitor.ui import ascii_histogram, bucket_fee_rate, build_fee_buckets, gather_snapshot
+from btcmonitor.ui import (
+    ascii_histogram,
+    bucket_fee_rate,
+    build_fee_buckets,
+    build_layout,
+    gather_snapshot,
+    update_layout,
+)
 
 
 class FeeBucketTests(unittest.TestCase):
@@ -60,7 +70,7 @@ class BuildFeeBucketsTests(unittest.TestCase):
         self.assertEqual(self.bucket_of(59 * 2, vsize=59), "2+ sat/vB")
 
 
-class BlockProjectionTests(unittest.TestCase):
+class SnapshotTestCase(unittest.TestCase):
     def setUp(self):
         self.rpc = Mock(spec=BitcoinRPC)
         self.rpc.get_blockchain_info.return_value = {
@@ -88,6 +98,8 @@ class BlockProjectionTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
+
+class BlockProjectionTests(SnapshotTestCase):
     def projection(self):
         snapshot, view, projection, bitcoin_info, error = gather_snapshot(self.rpc)
         self.assertIsNone(error)
@@ -163,6 +175,23 @@ class BlockProjectionTests(unittest.TestCase):
         self.assertEqual(buckets["50+ sat/vB"], 200)
         self.assertEqual(buckets["3+ sat/vB"], 100)
         self.assertEqual(sum(buckets.values()), 300)
+
+
+
+class UnexpectedErrorTests(SnapshotTestCase):
+    def test_malformed_node_data_is_reported_not_raised(self):
+        self.rpc.get_mempool_info.return_value = None
+        snapshot, view, projection, bitcoin_info, error = gather_snapshot(self.rpc)
+        self.assertIsNone(snapshot)
+        self.assertIn("Unexpected error: AttributeError", error)
+
+    def test_failing_panel_is_reported_in_node_panel(self):
+        console = Console(file=io.StringIO(), width=120, height=40)
+        layout = build_layout()
+        with patch("btcmonitor.ui.get_system_panel", side_effect=OSError("psutil failed")):
+            update_layout(layout, self.rpc, console)
+        console.print(layout["node"])
+        self.assertIn("Unexpected error: OSError: psutil failed", console.file.getvalue())
 
 
 if __name__ == "__main__":
