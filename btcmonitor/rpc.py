@@ -143,11 +143,17 @@ class BitcoinRPC:
     def get_block(self, block_hash: str, verbosity: int = 1) -> dict[str, Any]:
         return self.call("getblock", block_hash, verbosity)
 
-    def get_raw_transaction(self, txid: str, verbose: bool = False, block_hash: str | None = None) -> Any:
+    def get_raw_transaction(self, txid: str, verbose: bool | int = False, block_hash: str | None = None) -> Any:
         # With block_hash, transactions in that block can be looked up without -txindex
         if block_hash:
             return self.call("getrawtransaction", txid, verbose, block_hash)
         return self.call("getrawtransaction", txid, verbose)
+
+    def get_mempool_entry(self, txid: str) -> dict[str, Any]:
+        return self.call("getmempoolentry", txid)
+
+    def get_tx_out(self, txid: str, n: int, include_mempool: bool = True) -> dict[str, Any] | None:
+        return self.call("gettxout", txid, n, include_mempool)
 
     def get_block_hash(self, height: int) -> str:
         return self.call("getblockhash", height)

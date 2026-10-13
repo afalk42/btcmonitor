@@ -13,6 +13,9 @@ from btcmonitor.models import (
     RecentBlock,
     SyncProgress,
     Transaction,
+    TransactionDetail,
+    TxInput,
+    TxOutput,
 )
 from btcmonitor.panels import (
     ascii_histogram,
@@ -27,6 +30,7 @@ from btcmonitor.panels import (
     get_recent_blocks_panel,
     get_sync_panel,
     get_top_transactions_panel,
+    get_transaction_detail_panel,
     max_transaction_scroll,
     progress_bar,
     render_block_grid,
@@ -282,6 +286,77 @@ class RecentBlocksPanelTests(unittest.TestCase):
 
     def test_no_blocks_yet(self):
         self.assertIn("…", render(get_recent_blocks_panel(None)))
+
+
+def sample_detail(inputs=2, outputs=2, not_looked_up=0):
+    return TransactionDetail(
+        txid="37e53a90d7eebd28" + "0" * 48,
+        vsize=189,
+        weight=753,
+        fee_btc=0.0000338,
+        entry_time=1000,
+        replaceable=True,
+        ancestor_count=1,
+        ancestor_fee_rate=15.0,
+        descendant_count=0,
+        descendant_fee_rate=17.88,
+        parents=["parent"],
+        children=[],
+        inputs=[TxInput(f"prev{i}:0", f"bc1qinput{i}", 0.002) for i in range(inputs - 1)]
+        + [TxInput("gone:3", None, None)],
+        outputs=[TxOutput(f"bc1qoutput{i}", "witness_v0_keyhash", 0.001) for i in range(outputs - 1)]
+        + [TxOutput(None, "nulldata", 0.0)],
+        inputs_not_looked_up=not_looked_up,
+    )
+
+
+class TransactionDetailPanelTests(unittest.TestCase):
+    def detail_text(self, detail, height=30, price=None, currency=None):
+        panel = get_transaction_detail_panel(detail.txid, detail, None, price, currency, 120, height, now=1750)
+        return render(panel, width=120)
+
+    def test_summary_and_io(self):
+        text = self.detail_text(sample_detail(), price=50000.0, currency="usd")
+        for expected in (
+            "189 vB (753 WU)",
+            "0.00003380 BTC · 17.88 sat/vB · $1.69",
+            "for 12m 30s",
+            "signals BIP125 replaceability",
+            "1 unconfirmed · 15.00 sat/vB as a package",
+            "Inputs (2)",
+            "bc1qinput0",
+            "gone:3",  # spent coin not found: shows the outpoint
+            "OP_RETURN",
+            "Total (known)",
+            "0.00200000",
+            "Esc, ← or Enter: back",
+        ):
+            self.assertIn(expected, text)
+
+    def test_long_addresses_never_cut_amounts(self):
+        taproot = "bc1pyjv550z2dwturlwky0jezq4mcx7k6ukc7gxj0plmzhh4x8xdtjyzz9ghwgjqjhk54p"[:62]
+        detail = sample_detail()
+        detail.outputs = [TxOutput(taproot, "witness_v1_taproot", 0.001916)] * 2
+        detail.inputs = [TxInput("a:0", taproot, 12345.12345678)]
+        for width in (100, 140):
+            with self.subTest(width=width):
+                panel = get_transaction_detail_panel(detail.txid, detail, None, None, None, width, 30, now=1750)
+                text = render(panel, width=width)
+                self.assertIn("0.00191600", text)
+                self.assertIn("12345.12345678", text)
+                self.assertIn("…", text)  # the address gave way
+
+    def test_long_lists_are_cut_with_a_count(self):
+        text = self.detail_text(sample_detail(inputs=40, outputs=3, not_looked_up=5), height=24)
+        self.assertEqual(len(text.splitlines()), 24)
+        self.assertIn("Inputs (45)", text)
+        self.assertRegex(text, r"… \+\d+ more")
+
+    def test_loading_and_error(self):
+        loading = render(get_transaction_detail_panel("ab" * 32, None, None, None, None, 120, 20))
+        self.assertIn("Looking up transaction…", loading)
+        gone = render(get_transaction_detail_panel("ab" * 32, None, "No longer in the mempool", None, None, 120, 20))
+        self.assertIn("No longer in the mempool", gone)
 
 
 class BlockGridTests(unittest.TestCase):

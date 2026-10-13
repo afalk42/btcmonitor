@@ -9,6 +9,7 @@ from btcmonitor.formatting import (
     format_rate,
     format_time_since_block,
     format_txid,
+    shorten_middle,
 )
 
 
@@ -27,6 +28,12 @@ class FormattingTests(unittest.TestCase):
 
     def test_format_bytes_with_decimals(self):
         self.assertEqual((format_bytes(512, 1), format_bytes(8.1 * 1024**3, 1)), ("512 B", "8.1 GB"))
+
+    def test_shorten_middle(self):
+        address = "bc1q5th8w3yg2jjf5pvp439yue8nca39ql0hnxj54qvrdv0d8hxhf4pq44g9yt"
+        self.assertEqual(shorten_middle(address, 15), "bc1q5th…q44g9yt")
+        self.assertEqual(len(shorten_middle(address, 15)), 15)
+        self.assertEqual(shorten_middle("short", 15), "short")
 
     def test_format_txid(self):
         self.assertEqual(format_txid("abcdef0123456789"), "abcd...6789")

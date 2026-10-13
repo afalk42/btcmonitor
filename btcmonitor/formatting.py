@@ -21,6 +21,16 @@ def format_rate(bytes_per_second: float) -> str:
     return f"{bytes_per_second / 1024:.1f} GB/s"
 
 
+def shorten_middle(text: str, width: int) -> str:
+    """Fit `text` into `width` by eliding its middle, so both ends of an address stay readable"""
+    if len(text) <= width:
+        return text
+    if width < 5:
+        return text[:width]
+    head = width // 2
+    return f"{text[:head]}…{text[len(text) - (width - 1 - head) :]}"
+
+
 def format_txid(txid: str) -> str:
     """Format transaction ID as first4...last4"""
     if len(txid) >= 8:

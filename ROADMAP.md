@@ -14,7 +14,7 @@ Candidate features for btcmonitor, roughly in order of value. Each item is meant
 
 5. ✅ *2026-10-13* — **Networking details.** Bandwidth from `getnettotals`, plus peer client versions and connection types (including BIP324 v2 transport) from `getpeerinfo`.
 
-6. **Transaction detail view.** Press Enter on a row in the largest-transactions list to see inputs, outputs, fee, ancestors and descendants for that transaction.
+6. ✅ *2026-10-13* — **Transaction detail view.** Press Enter on a row in the largest-transactions list to see inputs, outputs, fee, ancestors and descendants for that transaction.
 
 7. **PyPI release.** Publish the package so it can be installed with `pipx install btcmonitor`, replacing the manual virtual environment steps in the README.
 

@@ -106,6 +106,43 @@ class RecentBlock:
 
 
 @dataclass
+class TxInput:
+    prev: str  # "txid:vout" of the coin being spent
+    address: str | None  # None when the spent coin could not be looked up
+    amount_btc: float | None
+
+
+@dataclass
+class TxOutput:
+    address: str | None  # None for outputs without an address, e.g. OP_RETURN
+    script_type: str
+    amount_btc: float
+
+
+@dataclass
+class TransactionDetail:
+    txid: str
+    vsize: int
+    weight: int
+    fee_btc: float
+    entry_time: int  # when the transaction entered this node's mempool
+    replaceable: bool | None  # BIP125 signalling, if the node reports it
+    ancestor_count: int  # unconfirmed ancestors, not counting this transaction
+    ancestor_fee_rate: float  # sat/vB of this transaction together with its ancestors
+    descendant_count: int
+    descendant_fee_rate: float
+    parents: list[str]  # direct unconfirmed parents
+    children: list[str]  # direct unconfirmed children
+    inputs: list[TxInput]
+    outputs: list[TxOutput]
+    inputs_not_looked_up: int = 0  # inputs beyond the lookup limit
+
+    @property
+    def fee_rate(self) -> float:
+        return self.fee_btc * 1e8 / max(1, self.vsize)
+
+
+@dataclass
 class DashboardData:
     """Everything one collection cycle produced; `error` is set instead when the node could not be read"""
 
