@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Dict
 
 # bitcoin.conf section name for each --network choice
 NETWORK_SECTIONS = {
@@ -15,7 +14,7 @@ NETWORK_SECTIONS = {
 NETWORK_ONLY_OPTIONS = {"rpcport"}
 
 
-def read_bitcoin_conf(path: Path, network: str) -> Dict[str, str]:
+def read_bitcoin_conf(path: Path, network: str) -> dict[str, str]:
     """Return the bitcoin.conf settings that apply to `network`.
 
     Follows Bitcoin Core's rules: `[section]` blocks and `section.option=` prefixes target one
@@ -29,8 +28,8 @@ def read_bitcoin_conf(path: Path, network: str) -> Dict[str, str]:
         return {}
 
     wanted = NETWORK_SECTIONS.get(network, "main")
-    top: Dict[str, str] = {}
-    scoped: Dict[str, str] = {}
+    top: dict[str, str] = {}
+    scoped: dict[str, str] = {}
     section = ""
     for line in lines:
         line = line.split("#", 1)[0].strip()
